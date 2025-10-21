@@ -1,6 +1,13 @@
+import SimulationProcess from "./SimulationProcess";
+import SystemGraphics from "./SystemGraphics";
 
 export const SimuladorPage = () => {
-  return (
-    <div>SimuladorPage</div>
-  )
-}
+    return (
+        <main className="justify-center">
+            <div>
+                <SimulationProcess/>
+                <SystemGraphics/>
+            </div>
+        </main>
+    );
+};
