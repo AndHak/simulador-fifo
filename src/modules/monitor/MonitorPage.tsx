@@ -1,6 +1,11 @@
+import ProcessMonitor from "./ProcessMonitor";
 
 export const MonitorPage = () => {
-  return (
-    <div>MonitorPage</div>
-  )
-}
+    return (
+        <main className="justify-center">
+            <div>
+                <ProcessMonitor />
+            </div>
+        </main>
+    );
+};
