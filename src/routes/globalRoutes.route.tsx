@@ -1,6 +1,7 @@
 import { Route, Routes, Navigate } from "react-router-dom";
 import { MonitorPage } from "@/modules/monitor/MonitorPage";
-import { SimuladorPage } from "@/modules/simulador/SimuladorPage";
+import SimuladorPage from "@/modules/simulador/SimuladorPage";
+
 
 const GlobalRoutes = () => {
   return (
