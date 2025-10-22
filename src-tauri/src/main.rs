@@ -14,7 +14,6 @@ pub struct Proceso {
   pub estado: String,
   pub avance: f64,            // placeholder (no lo sabemos, 0)
   pub iteraciones: u32,       // placeholder (0)
-  // puedes añadir más campos que quieras exponer
 }
 
 #[tauri::command]
@@ -38,7 +37,7 @@ fn obtener_procesos() -> Result<Vec<Proceso>, String> {
       _ => "desconocido",
     }.to_string();
 
-    // prioridad heurística: sysinfo no expone priority cross-platform; dejamos 1 por defecto
+    // prioridad heurística: sysinfo no expone priority cross-platform; asi que queda 1 por defecto
     let prioridad = 1;
 
     Proceso {
@@ -53,7 +52,7 @@ fn obtener_procesos() -> Result<Vec<Proceso>, String> {
     }
   }).collect();
 
-  // Opcional: ordenar por CPU descendente
+  // ordenar por CPU descendente
   out.sort_by(|a, b| b.tiempo_cpu.partial_cmp(&a.tiempo_cpu).unwrap_or(std::cmp::Ordering::Equal));
 
   Ok(out)
