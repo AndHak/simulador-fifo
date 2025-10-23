@@ -1,7 +1,7 @@
 {
     "$schema": "https://schema.tauri.app/config/2",
     "productName": "Simulador FIFO",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "identifier": "com.andhaktechnologies",
     "build": {
         "beforeDevCommand": "npm run dev",
