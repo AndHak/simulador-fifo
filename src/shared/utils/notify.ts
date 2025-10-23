@@ -1,6 +1,7 @@
 import type { ToastContainerProps, TypeOptions, ToastPosition } from "react-toastify"
 import "react-toastify/dist/ReactToastify.css"
 
+
 export type Theme = "dark" | "light" | "system"
 
 type ToastClassNameContext = {
@@ -30,7 +31,7 @@ export const createToastConfig = (theme: Theme): ToastContainerProps => {
       error: "bg-stone-50",
       info: "bg-stone-50",
       warning: "bg-stone-50",
-      default: "bg-stone-50",
+      default: "bg-stone-50 flex flex-col justify-center items-center",
     }
 
     const dark = {
@@ -39,7 +40,7 @@ export const createToastConfig = (theme: Theme): ToastContainerProps => {
       error: "bg-slate-800",
       info: "bg-slate-800 ",
       warning: "bg-slate-800",
-      default: "bg-slate-800 ",
+      default: "bg-slate-800 flex flex-col justify-center items-center",
     }
 
     const palette = resolved === "dark" ? dark : light

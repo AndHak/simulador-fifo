@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
@@ -18,17 +17,18 @@ export type EstadoProceso = "listo" | "ejecutando" | "suspendido" | "terminado" 
 export type Interactividad = "alta" | "media" | "baja"
 
 export interface Process {
-  pid: string
-  nombre: string
-  prioridad: number
-  tiempo_total: number
-  tiempo_restante: number
-  quantum: number
-  iteracion: number
-  estado: EstadoProceso
-  progreso: number
-  tiempo_cpu: number
-  interactividad: Interactividad
+  pid: string;
+  nombre: string;
+  prioridad: number;
+  tiempo_total: number;
+  tiempo_restante: number;
+  quantum: number;
+  iteracion: number;
+  estado: EstadoProceso;
+  progreso: number;
+  tiempo_cpu: number;
+  interactividad: Interactividad;
+  resident?: boolean; 
 }
 
 interface ProcessFormProps {
@@ -107,7 +107,13 @@ export default function ProcessForm({
   )
 
   return (
-    <div className="flex flex-col h-full justify-between">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        handleSave()
+      }}
+      className="flex flex-col h-full justify-between"
+    >
       <div className="overflow-y-auto p-6 space-y-5">
         <SheetHeader>
           <SheetTitle>{initial ? "Editar proceso" : "Crear proceso"}</SheetTitle>
@@ -200,7 +206,6 @@ export default function ProcessForm({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="listo">Listo</SelectItem>
-                <SelectItem value="ejecutado">Ejecutado</SelectItem>
                 <SelectItem value="suspendido">Suspendido</SelectItem>
                 <SelectItem value="terminado">Terminado</SelectItem>
                 <SelectItem value="inactivo">Inactivo</SelectItem>
@@ -239,11 +244,11 @@ export default function ProcessForm({
       </div>
 
       <SheetFooter className="p-4 border-t flex justify-end gap-2">
-        <Button variant="secondary" onClick={onCancel}>
+        <Button type="button" variant="secondary" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button onClick={handleSave}>Guardar</Button>
+        <Button type="submit">Guardar</Button>
       </SheetFooter>
-    </div>
+    </form>
   )
 }

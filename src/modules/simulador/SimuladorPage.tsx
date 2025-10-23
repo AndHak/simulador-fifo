@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+
 import { useLocation } from "react-router-dom";
-import { Plus } from "lucide-react";
+import {  Plus, Trash2 } from "lucide-react";
 import {
     Sheet,
     SheetContent,
@@ -14,8 +15,15 @@ import SystemGraphics from "./SystemGraphics";
 import ProcessForm, { Process } from "./ProcessFrom";
 import { toast, ToastContainer } from "react-toastify";
 import { createToastConfig } from "@/shared/utils/notify";
+import {
+    Tooltip,
+    TooltipTrigger,
+    TooltipContent,
+} from "@/shared/components/ui/tooltip";
 
 export default function SimuladorPage() {
+    const confirmToastIdRef = useRef<string | number | null>(null);
+
     const [procesos, setProcesos] = useState<Process[]>(() => {
         const saved = localStorage.getItem("procesos_simulador");
         if (saved) {
@@ -31,7 +39,8 @@ export default function SimuladorPage() {
 
     const [editing, setEditing] = useState<Process | null>(null);
     const [openSheet, setOpenSheet] = useState(false);
-    const [initialFromMonitor, setInitialFromMonitor] = useState<Process | null>(null);
+    const [initialFromMonitor, setInitialFromMonitor] =
+        useState<Process | null>(null);
     const [running, setRunning] = useState(false);
     const [theme, setTheme] = useState<"dark" | "light">("light");
 
@@ -39,7 +48,10 @@ export default function SimuladorPage() {
 
     useEffect(() => {
         try {
-            localStorage.setItem("procesos_simulador", JSON.stringify(procesos));
+            localStorage.setItem(
+                "procesos_simulador",
+                JSON.stringify(procesos)
+            );
         } catch (err) {
             console.error("Error guardando procesos en localStorage", err);
         }
@@ -57,34 +69,58 @@ export default function SimuladorPage() {
 
     useEffect(() => {
         const media = window.matchMedia("(prefers-color-scheme: dark)");
-        const handleThemeChange = () => setTheme(media.matches ? "dark" : "light");
+        const handleThemeChange = () =>
+            setTheme(media.matches ? "dark" : "light");
         handleThemeChange();
         media.addEventListener("change", handleThemeChange);
         return () => media.removeEventListener("change", handleThemeChange);
     }, []);
 
     const crearProceso = (bcp: Process) => {
-        let wasAdded = false;
-
         setProcesos((prev) => {
             if (prev.some((p) => p.pid === bcp.pid)) {
+                toast.error("El PID ya existe. Usa uno diferente.", {
+                    toastId: `err-pid-${bcp.pid}`,
+                });
                 return prev;
             }
-            wasAdded = true;
-            return [...prev, bcp]; 
-        });
-
-        if (wasAdded) {
-            toast.success(`Proceso ${bcp.nombre} agregado correctamente`, { toastId: `added-${bcp.pid}` });
+            // si el simulador está detenido, empezar como 'inactivo'
+            const initialEstado =
+                bcp.estado ?? (running ? "listo" : "inactivo");
+            const toAdd = {
+                ...bcp,
+                tiempo_restante: bcp.tiempo_restante ?? bcp.tiempo_total,
+                estado: initialEstado,
+                resident: bcp.resident ?? true,
+            };
+            const next = [...prev, toAdd];
+            toast.success(`Proceso ${bcp.nombre} agregado correctamente`, {
+                toastId: `added-${bcp.pid}`,
+            });
             setOpenSheet(false);
             setInitialFromMonitor(null);
-        } else {
-            toast.error("El PID ya existe. Usa uno diferente.", { toastId: `err-pid-${bcp.pid}` });
-        }
+            return next;
+        });
     };
 
+    // actualizarProceso, se cambia al final si se modifica el estado a listo
     const actualizarProceso = (pid: string, cambios: Partial<Process>) => {
-        setProcesos((p) => p.map((x) => (x.pid === pid ? { ...x, ...cambios } : x)));
+        setProcesos((prev) => {
+            const idx = prev.findIndex((p) => p.pid === pid);
+            if (idx === -1) return prev;
+            const prevP = prev[idx];
+            const updated = { ...prevP, ...cambios };
+
+            if (cambios.estado === "listo" && prevP.estado !== "listo") {
+                // remover y añadir al final
+                return prev.filter((p) => p.pid !== pid).concat(updated);
+            }
+
+            const copia = [...prev];
+            copia[idx] = updated;
+            setOpenSheet(false);
+            return copia;
+        });
     };
 
     const eliminarProceso = (pid: string) => {
@@ -94,9 +130,115 @@ export default function SimuladorPage() {
             return prev.filter((x) => x.pid !== pid);
         });
         if (existed) {
-            toast.info(`Proceso ${pid} eliminado`, { toastId: `deleted-${pid}` });
+            toast.info(`Proceso ${pid} eliminado`, {
+                toastId: `deleted-${pid}`,
+            });
         } else {
-            toast.warning(`Proceso ${pid} no encontrado`, { toastId: `delete-notfound-${pid}` });
+            toast.warning(`Proceso ${pid} no encontrado`, {
+                toastId: `delete-notfound-${pid}`,
+            });
+        }
+    };
+
+    const reordenarProcesos = (from: number, to: number) => {
+        setProcesos((prev) => {
+            const copia = [...prev];
+            if (
+                from < 0 ||
+                from >= copia.length ||
+                to < 0 ||
+                to >= copia.length
+            )
+                return copia;
+            const [moved] = copia.splice(from, 1);
+            copia.splice(to, 0, moved);
+            return copia;
+        });
+    };
+
+    const borrarTodos = () => {
+        if (!procesos.length) {
+            toast.warning("No hay procesos para borrar");
+            return;
+        }
+
+        if (confirmToastIdRef.current !== null) return;
+
+        const ConfirmContent = () => (
+            <div className="max-w-xs">
+                <div className="font-semibold mb-2">
+                    ¿Borrar todos los procesos?
+                </div>
+                <div className="text-sm mb-3">
+                    Esta acción no se puede deshacer.
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                    <Button
+                        variant="destructive"
+                        onClick={() => {
+                            setProcesos([]);
+                            if (confirmToastIdRef.current !== null)
+                                toast.dismiss(confirmToastIdRef.current);
+                            confirmToastIdRef.current = null;
+                            toast.success(
+                                "Todos los procesos han sido eliminados"
+                            );
+                        }}
+                    >
+                        Borrar
+                    </Button>
+
+                    <Button
+                        variant="outline"
+                        onClick={() => {
+                            if (confirmToastIdRef.current !== null)
+                                toast.dismiss(confirmToastIdRef.current);
+                            confirmToastIdRef.current = null;
+                            toast.info("Operación cancelada");
+                        }}
+                    >
+                        Cancelar
+                    </Button>
+                </div>
+            </div>
+        );
+
+        const id = toast(<ConfirmContent />, {
+            autoClose: false,
+            closeOnClick: false,
+            pauseOnHover: false,
+            icon: false,
+        });
+
+        confirmToastIdRef.current = id;
+    };
+
+
+    // los procesos no terminados y no suspendidos pasan a 'listo'
+    // todos los procesos no terminados pasan a 'inactivo'
+    const handleToggleRunning = () => {
+        const next = !running;
+        setRunning(next);
+
+        if (next) {
+            // arrancando: marcar listos los que puedan ejecutarse
+            setProcesos((prev) =>
+                prev.map((p) =>
+                    p.estado !== "terminado" && p.estado !== "suspendido"
+                        ? { ...p, estado: "listo" }
+                        : p
+                )
+            );
+        } else {
+            // detenido: todos (no terminados) en 'inactivo' 
+            setProcesos((prev) =>
+                prev.map((p) =>
+                    p.estado !== "terminado"
+                        ? { ...p, estado: "inactivo", tiempo_cpu: 0 }
+                        : p
+                )
+            );
         }
     };
 
@@ -106,20 +248,32 @@ export default function SimuladorPage() {
             const copia = prev.map((p) => ({ ...p }));
 
             for (let i = 0; i < copia.length; i++) {
-                if (copia[i].estado !== "terminado" && copia[i].estado !== "suspendido") {
+                if (
+                    copia[i].estado !== "terminado" &&
+                    copia[i].estado !== "suspendido"
+                ) {
                     copia[i].estado = "listo";
-                    copia[i].tiempo_cpu = 0;
                 }
+                // Normalizar CPU: solo el activo tendrá >0
+                copia[i].tiempo_cpu = 0;
             }
 
             const idx = copia.findIndex((p) => p.estado === "listo");
             if (idx === -1) return copia;
 
             const procesoActivo = copia[idx];
-            const slice = Math.min(procesoActivo.quantum, procesoActivo.tiempo_restante);
-            const tiempo_restante = Math.max(0, procesoActivo.tiempo_restante - slice);
+            const slice = Math.min(
+                procesoActivo.quantum,
+                procesoActivo.tiempo_restante
+            );
+            const tiempo_restante = Math.max(
+                0,
+                procesoActivo.tiempo_restante - slice
+            );
             const progreso = Math.round(
-                ((procesoActivo.tiempo_total - tiempo_restante) / procesoActivo.tiempo_total) * 100
+                ((procesoActivo.tiempo_total - tiempo_restante) /
+                    procesoActivo.tiempo_total) *
+                    100
             );
             const terminado = tiempo_restante === 0;
 
@@ -147,10 +301,15 @@ export default function SimuladorPage() {
             <ToastContainer {...createToastConfig(theme)} />
 
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Simulador de Procesos (FIFO)</h1>
+                <h1 className="text-2xl font-bold">
+                    Simulador de Procesos (FIFO)
+                </h1>
 
-                <div className="flex gap-2">
-                    <Button variant={running ? "destructive" : "default"} onClick={() => setRunning(!running)}>
+                <div className="flex gap-2 items-center">
+                    <Button
+                        variant={running ? "destructive" : "default"}
+                        onClick={handleToggleRunning}
+                    >
                         {running ? "Detener" : "Iniciar"}
                     </Button>
 
@@ -171,16 +330,38 @@ export default function SimuladorPage() {
                             />
                         </SheetContent>
                     </Sheet>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                onClick={borrarTodos}
+                                title="Borrar todos los procesos"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            Borrar todos los procesos
+                        </TooltipContent>
+                    </Tooltip>
                 </div>
             </div>
 
             <SimulationProcess
                 procesos={procesos}
                 onEditar={(p) => setEditing(p)}
-                onSuspender={(pid) => actualizarProceso(pid, { estado: "suspendido" })}
-                onReanudar={(pid) => actualizarProceso(pid, { estado: "listo" })}
+                onSuspender={(pid) =>
+                    actualizarProceso(pid, {
+                        estado: "suspendido",
+                        tiempo_cpu: 0,
+                        resident: true,
+                    })
+                }
+                onReanudar={(pid) =>
+                    actualizarProceso(pid, { estado: "listo" })
+                }
                 onEliminar={eliminarProceso}
                 onActualizar={actualizarProceso}
+                onReorder={reordenarProcesos}
             />
 
             <SystemGraphics procesos={procesos} />
@@ -194,7 +375,10 @@ export default function SimuladorPage() {
                             onSave={(bcp) => {
                                 actualizarProceso(editing.pid, bcp);
                                 setEditing(null);
-                                toast.success(`Proceso ${bcp.nombre} actualizado`, { toastId: `updated-${editing.pid}` });
+                                toast.success(
+                                    `Proceso ${bcp.nombre} actualizado`,
+                                    { toastId: `updated-${editing.pid}` }
+                                );
                             }}
                             onCancel={() => setEditing(null)}
                         />

@@ -20,26 +20,19 @@ export default function SystemGraphics({ procesos }: SystemGraphicsProps) {
   const accentWarn = "hsl(35 90% 55%)";
   const accentDanger = "hsl(0 80% 60%)";
 
-
+  // CPU: solo el proceso en estado "ejecutando" debería reportar CPU > 0
   const cpuData = useMemo(() => {
     if (!procesos?.length) return [];
 
-    const data = procesos.map((p) => ({
+    return procesos.map((p) => ({
       name: p.nombre,
-      cpu: typeof p.tiempo_cpu === "number" ? Math.max(0, Math.min(100, p.tiempo_cpu)) : 0,
+      cpu: typeof p.tiempo_cpu === "number"
+        ? Math.max(0, Math.min(100, p.tiempo_cpu))
+        : (p.estado === "ejecutando" ? 100 : 0),
       progreso: p.progreso ?? 0,
       estado: p.estado,
       pid: p.pid,
     }));
-
-    if (data.some((d) => d.cpu > 0)) return data;
-
-    const firstExec = data.find((d) => d.estado === "ejecutando") ?? data.find((d) => d.estado === "listo");
-    if (firstExec) {
-      return data.map((d) => (d.pid === firstExec.pid ? { ...d, cpu: 90 } : { ...d, cpu: 0 }));
-    }
-
-    return data;
   }, [procesos]);
 
   // progreso promedio
@@ -49,15 +42,28 @@ export default function SystemGraphics({ procesos }: SystemGraphicsProps) {
     return Math.round(sum / procesos.length);
   }, [procesos]);
 
-  // RAM estimation 
+  // función auxiliar que decide factor de RAM según estado y resident (swapped)
+  const ramFactorFor = (p: Process) => {
+    if (p.estado === "terminado") return 0;
+    if (p.estado === "inactivo") return 0;
+    if (p.estado === "suspendido") {
+      // si no está resident -> paginado -> muy poca RAM
+      return p.resident === false ? 0.05 : 0.35;
+    }
+    if (p.estado === "listo") return 0.7;
+    if (p.estado === "ejecutando") return 1;
+    return 0;
+  };
+
+  // RAM estimada (total)
   const ramTotal = useMemo(() => {
     if (!procesos?.length) return 0;
     const sum = procesos.reduce((acc, p) => {
       const base = 8;
       const iterBonus = (p.iteracion ?? 0) * 0.4;
       const priorityBonus = p.prioridad <= 2 ? 6 : p.prioridad <= 4 ? 3 : 0;
-      const stateFactor = p.estado === "ejecutando" ? 1 : p.estado === "listo" ? 0.7 : p.estado === "suspendido" ? 0.35 : 0;
-      return acc + (base + iterBonus + priorityBonus) * stateFactor;
+      const factor = ramFactorFor(p);
+      return acc + (base + iterBonus + priorityBonus) * factor;
     }, 0);
     return Math.min(100, Math.round((sum / (procesos.length * 20)) * 100));
   }, [procesos]);
@@ -66,7 +72,7 @@ export default function SystemGraphics({ procesos }: SystemGraphicsProps) {
     if (!procesos?.length) return [{ time: "T0", ram: 0 }];
     return procesos.map((p, i) => {
       const base = 8 + (p.iteracion ?? 0) * 0.4 + (p.prioridad <= 2 ? 6 : p.prioridad <= 4 ? 3 : 0);
-      const factor = p.estado === "ejecutando" ? 1 : p.estado === "listo" ? 0.7 : p.estado === "suspendido" ? 0.35 : 0;
+      const factor = ramFactorFor(p);
       return { time: `T${i + 1}`, ram: Math.min(100, Math.round(base * factor)) };
     });
   }, [procesos]);

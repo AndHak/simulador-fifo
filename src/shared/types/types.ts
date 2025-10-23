@@ -38,4 +38,5 @@ export interface Process {
   progreso: number;
   tiempo_cpu: number;
   interactividad: Interactividad;
+  resident?: boolean; // true si está en memoria (no paginado). opcional, por compatibilidad.
 }
