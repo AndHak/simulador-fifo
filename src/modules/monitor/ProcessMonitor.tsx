@@ -1,6 +1,3 @@
-// src/components/ProcessMonitor.tsx
-"use client";
-
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useNavigate } from "react-router-dom";
@@ -53,6 +50,7 @@ export default function ProcessMonitor() {
             // guardar scroll actual antes de actualizar
             if (containerRef.current)
                 savedScrollRef.current = containerRef.current.scrollTop;
+                console.log('Se ha refrescado')
 
             setLoading(true);
             setError(null);

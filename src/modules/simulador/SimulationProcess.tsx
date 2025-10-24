@@ -1,6 +1,3 @@
-// SimulationProcess.tsx
-"use client";
-
 import React, { useMemo, useState, memo } from "react";
 import { Card, CardContent } from "@/shared/components/ui/card";
 import {

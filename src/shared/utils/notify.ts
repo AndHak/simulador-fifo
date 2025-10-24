@@ -57,7 +57,7 @@ export const createToastConfig = (theme: Theme): ToastContainerProps => {
 
 return {
   position: "top-center",
-  autoClose: 4000,
+  autoClose: 3000,
   hideProgressBar: false,
   closeOnClick: true,
   pauseOnHover: true,

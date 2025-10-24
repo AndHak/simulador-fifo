@@ -1,5 +1,3 @@
-"use client";
-
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as ChartTooltip,
   BarChart, Bar, CartesianGrid, AreaChart, Area,

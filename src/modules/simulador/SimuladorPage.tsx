@@ -1,7 +1,4 @@
-"use client";
-
 import { useState, useEffect, useRef } from "react";
-
 import { useLocation } from "react-router-dom";
 import {  Plus, Trash2 } from "lucide-react";
 import {
