@@ -119,6 +119,11 @@ export default function SimulationProcess({
     const isExecuting = p.estado === "ejecutando";
     const isMenuOpen = menuAbierto === p.pid;
 
+    // helper display helpers
+    const showNum = (v: number | undefined | null) =>
+      typeof v === "number" ? v : "-";
+    const showBool = (v?: boolean) => (v ? "Sí" : "No");
+
     return (
       <TableRow
         ref={setNodeRef as any}
@@ -146,9 +151,27 @@ export default function SimulationProcess({
 
         <TableCell>{p.pid}</TableCell>
         <TableCell>{p.nombre}</TableCell>
-        <TableCell>{p.prioridad}</TableCell>
-        <TableCell>{p.tiempo_total}</TableCell>
-        <TableCell>{p.tiempo_restante}</TableCell>
+
+        {/* Prioridad */}
+        <TableCell>{showNum(p.prioridad)}</TableCell>
+
+        {/* Interactividad */}
+        <TableCell>{p.interactividad ?? "-"}</TableCell>
+
+        {/* Tiempo Total */}
+        <TableCell>{showNum(p.tiempo_total)}</TableCell>
+
+        {/* Tiempo Restante */}
+        <TableCell>{showNum(p.tiempo_restante)}</TableCell>
+
+        {/* Quantum */}
+        <TableCell>{showNum(p.quantum)}</TableCell>
+
+        {/* Iteración */}
+        <TableCell>{showNum(p.iteracion)}</TableCell>
+
+
+        {/* Estado */}
         <TableCell>
           <span
             className={
@@ -165,6 +188,7 @@ export default function SimulationProcess({
           </span>
         </TableCell>
 
+        {/* Progreso (barra) */}
         <TableCell className="w-44">
           <div className="h-2 bg-muted rounded overflow-hidden">
             <div
@@ -198,7 +222,7 @@ export default function SimulationProcess({
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 <Button
-                className="w-full justify-start"
+                  className="w-full justify-start"
                   variant="ghost"
                   disabled={p.estado === "listo" || p.estado === "terminado"}
                   onClick={() => onActualizar(p.pid, { estado: "listo" })}
@@ -223,7 +247,7 @@ export default function SimulationProcess({
                 </Button>
 
                 <Button
-                className="w-full justify-start"
+                  className="w-full justify-start"
                   variant="ghost"
                   onClick={() =>
                     onActualizar(p.pid, {
@@ -238,7 +262,7 @@ export default function SimulationProcess({
                 </Button>
 
                 <Button
-                className="w-full justify-start"
+                  className="w-full justify-start"
                   variant="ghost"
                   onClick={() =>
                     onActualizar(p.pid, {
@@ -287,8 +311,11 @@ export default function SimulationProcess({
                 <TableHead>PID</TableHead>
                 <TableHead>Nombre</TableHead>
                 <TableHead>Prioridad</TableHead>
+                <TableHead>Interactividad</TableHead>
                 <TableHead>Tiempo Total</TableHead>
                 <TableHead>Tiempo Restante</TableHead>
+                <TableHead>Quantum</TableHead>
+                <TableHead>Iteración</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Progreso</TableHead>
                 <TableHead>Acciones</TableHead>

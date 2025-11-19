@@ -2,13 +2,6 @@ import { useState, useEffect } from "react"
 import { Button } from "@/shared/components/ui/button"
 import { Input } from "@/shared/components/ui/input"
 import { Label } from "@/shared/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/components/ui/select"
 import { SheetFooter, SheetHeader, SheetTitle } from "@/shared/components/ui/sheet"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/shared/components/ui/tooltip"
 import { CircleHelp } from "lucide-react"
@@ -44,54 +37,85 @@ export default function ProcessForm({
   onCancel,
   existingPids = [],
 }: ProcessFormProps) {
-  const [form, setForm] = useState<Process>({
-    pid: "",
-    nombre: "",
-    prioridad: 1,
-    tiempo_total: 100,
-    tiempo_restante: 100,
-    quantum: 10,
-    iteracion: 0,
-    estado: "listo",
-    progreso: 0,
-    tiempo_cpu: 0,
-    interactividad: "media",
-  })
-
-  const [errors, setErrors] = useState<{ pid?: string; nombre?: string }>({})
+  // Solo mantenemos el campo editable 'nombre'
+  const [nombre, setNombre] = useState<string>(initial?.nombre ?? "")
+  const [errors, setErrors] = useState<{ nombre?: string }>({})
 
   useEffect(() => {
-    if (initial) setForm((prev) => ({ ...prev, ...initial }))
+    if (initial) setNombre(initial.nombre ?? "")
   }, [initial])
 
-  const handle = <K extends keyof Process>(key: K, value: Process[K]) =>
-    setForm((prev) => ({ ...prev, [key]: value }))
+  // helpers locales (sin archivo utils)
+  const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)]
+  const randInt = (min: number, max: number) =>
+    Math.floor(Math.random() * (max - min + 1)) + min
+
+  const generatePid = (existing: string[] = []) => {
+    // Queremos PIDs numéricos aleatorios de 3 a 6 dígitos (100 .. 999999)
+    const existingSet = new Set(existing.map(String));
+    const min = 100;      // 3 dígitos mínimo
+    const max = 999999;   // 6 dígitos máximo
+
+    // intentos para encontrar uno no colisionante
+    for (let i = 0; i < 50; i++) {
+      const n = Math.floor(Math.random() * (max - min + 1)) + min;
+      const pid = String(n);
+      if (!existingSet.has(pid)) return pid;
+    }
+
+    // fallback: timestamp + sufijo aleatorio (asegura unicidad)
+    return String(Date.now()) + String(Math.floor(Math.random() * 900) + 100);
+  }
+
+  const generatePriority = () => randInt(1, 10)
+  const generateInteractivity = (): Interactividad => pick<Interactividad>(["alta", "media", "baja"])
+  const generateTiempoTotal = () => randInt(50, 200)
+  const generateQuantum = (prioridad: number) => {
+    const base = 8
+    return Math.max(4, Math.round(base * (1 + (10 - prioridad) / 10)))
+  }
 
   const validate = () => {
     const newErrors: typeof errors = {}
-
-    // PID validaciones
-    if (!form.pid.trim()) {
-      newErrors.pid = "El PID es obligatorio"
-    } else if (!/^\d+$/.test(form.pid)) {
-      newErrors.pid = "El PID debe ser un número entero positivo"
-    } else if (!initial && existingPids.includes(form.pid)) {
-      newErrors.pid = "Ya existe un proceso con ese PID"
-    }
-
-    // Nombre validaciones
-    if (!form.nombre.trim()) {
-      newErrors.nombre = "El nombre es obligatorio"
-    }
-
+    if (!nombre.trim()) newErrors.nombre = "El nombre es obligatorio"
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleSave = () => {
     if (!validate()) return
-    onSave({ ...form })
-    onCancel?.() // cerrar sheet después de guardar
+
+    if (initial) {
+      // edición: solo modificar nombre (PID y demás permanecen)
+      onSave({ ...initial, nombre: nombre.trim() })
+      onCancel?.()
+      return
+    }
+
+    // creación: autogenerar todo excepto nombre
+    const pid = generatePid(existingPids)
+    const prioridad = generatePriority()
+    const interactividad = generateInteractivity()
+    const tiempo_total = generateTiempoTotal()
+    const tiempo_restante = tiempo_total
+    const quantum = generateQuantum(prioridad)
+
+    const newProcess: Process = {
+      pid,
+      nombre: nombre.trim(),
+      prioridad,
+      tiempo_total,
+      tiempo_restante,
+      quantum,
+      iteracion: 0,
+      estado: "listo",
+      progreso: 0,
+      tiempo_cpu: 0,
+      interactividad,
+    }
+
+    onSave(newProcess)
+    onCancel?.()
   }
 
   const TooltipLabel = ({ text, tooltip }: { text: string; tooltip: string }) => (
@@ -121,125 +145,31 @@ export default function ProcessForm({
 
         <div className="flex flex-col space-y-4 w-full">
           <div>
-            <TooltipLabel text="PID" tooltip="Identificador único del proceso" />
+            <TooltipLabel text="Nombre" tooltip="Nombre del proceso (único campo editable)" />
             <Input
-              value={form.pid}
-              onChange={(e) => handle("pid", e.target.value)}
-              className={errors.pid ? "border-destructive" : ""}
-              disabled={!!initial} // no se puede cambiar el PID al editar
-            />
-            {errors.pid && <p className="text-sm text-destructive mt-1">{errors.pid}</p>}
-          </div>
-
-          <div>
-            <TooltipLabel text="Nombre" tooltip="Nombre del proceso" />
-            <Input
-              value={form.nombre}
-              onChange={(e) => handle("nombre", e.target.value)}
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
               className={errors.nombre ? "border-destructive" : ""}
             />
             {errors.nombre && <p className="text-sm text-destructive mt-1">{errors.nombre}</p>}
           </div>
 
-          <div>
-            <TooltipLabel text="Prioridad" tooltip="Nivel de prioridad asignado" />
-            <Input
-              type="number"
-              min={1}
-              value={form.prioridad}
-              onChange={(e) => handle("prioridad", Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <TooltipLabel text="Tiempo total" tooltip="Tiempo necesario para ejecutar el proceso" />
-            <Input
-              type="number"
-              min={1}
-              value={form.tiempo_total}
-              onChange={(e) => {
-                const total = Number(e.target.value)
-                handle("tiempo_total", total)
-                if (!initial) handle("tiempo_restante", total)
-              }}
-            />
-          </div>
-
-          <div>
-            <TooltipLabel text="Tiempo restante" tooltip="Cuánto le falta por ejecutar" />
-            <Input
-              type="number"
-              min={0}
-              value={form.tiempo_restante}
-              onChange={(e) => handle("tiempo_restante", Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <TooltipLabel text="Quantum" tooltip="Tiempo máximo antes de pasar a la cola" />
-            <Input
-              type="number"
-              min={1}
-              value={form.quantum}
-              onChange={(e) => handle("quantum", Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <TooltipLabel text="Iteración" tooltip="Cantidad de ciclos ejecutados" />
-            <Input
-              type="number"
-              min={0}
-              value={form.iteracion}
-              onChange={(e) => handle("iteracion", Number(e.target.value))}
-            />
-          </div>
-
-          <div>
-            <TooltipLabel text="Estado" tooltip="Estado actual del proceso" />
-            <Select
-              value={form.estado}
-              onValueChange={(v: Process["estado"]) => handle("estado", v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="listo">Listo</SelectItem>
-                <SelectItem value="suspendido">Suspendido</SelectItem>
-                <SelectItem value="terminado">Terminado</SelectItem>
-                <SelectItem value="inactivo">Inactivo</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <TooltipLabel text="Interactividad" tooltip="Nivel de interactividad del proceso" />
-            <Select
-              value={form.interactividad}
-              onValueChange={(v: Process["interactividad"]) => handle("interactividad", v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Seleccionar" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="alta">Alta</SelectItem>
-                <SelectItem value="media">Media</SelectItem>
-                <SelectItem value="baja">Baja</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <TooltipLabel text="Progreso" tooltip="Porcentaje completado del proceso" />
-            <Input
-              type="number"
-              min={0}
-              max={100}
-              value={form.progreso}
-              onChange={(e) => handle("progreso", Number(e.target.value))}
-            />
-          </div>
+          {/* Mostrar valores autogenerados en modo edición, o nota en creación */}
+          {initial ? (
+            <>
+              <div className="text-sm text-muted-foreground space-y-2">
+                <div>PID: <strong>{initial.pid}</strong></div>
+                <div>Prioridad: <strong>{initial.prioridad}</strong></div>
+                <div>Interactividad: <strong>{initial.interactividad}</strong></div>
+                <div>Tiempo total: <strong>{initial.tiempo_total}</strong></div>
+                <div>Quantum: <strong>{initial.quantum}</strong></div>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-muted-foreground">
+              PID, prioridad, interactividad y tiempos se asignarán automáticamente al guardar.
+            </div>
+          )}
         </div>
       </div>
 

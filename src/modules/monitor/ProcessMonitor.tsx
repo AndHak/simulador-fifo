@@ -83,28 +83,63 @@ export default function ProcessMonitor() {
         return () => clearInterval(intervalo);
     }, [fetchProcesos]);
 
+    // Helper seguro para convertir a número (o undefined)
+    const toNumber = (v: any): number | undefined => {
+        if (v == null) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+    };
+
+    /**
+     * mapToSimulator
+     * - Prefiere campos presentes en `Proceso`: tiempo_total, tiempo_restante, quantum, iteraciones.
+     * - Si faltan, genera defaults (basados en tiempo_cpu o memoria).
+     * - Normaliza `iteraciones` -> `iteracion`.
+     */
     function mapToSimulator(p: Proceso): Partial<Process> {
         const pid = String(p.pid ?? Date.now());
         const nombre = p.nombre ?? `proc-${pid}`;
-        const prioridad = typeof p.prioridad === "number" ? p.prioridad : 1;
+
+        // prioridad: si el proceso real incluye prioridad, usarlo; si no, fallback a 1
+        const prioridad = toNumber(p.prioridad) ?? 1;
+
+        // tiempo_total: prioridad sobre p.tiempo_total, si no existe se calcula desde tiempo_cpu o memoria
+        const tiempoCpuNum = toNumber(p.tiempo_cpu);
         const tiempo_total =
-            typeof p.tiempo_cpu === "number" && p.tiempo_cpu > 0
-                ? Math.max(5, Math.round(p.tiempo_cpu))
+            toNumber((p as any).tiempo_total) ??
+            (typeof tiempoCpuNum === "number" && tiempoCpuNum > 0
+                ? Math.max(5, Math.round(tiempoCpuNum))
                 : Math.max(
                       5,
-                      Math.round((p.memoria ?? 0) / (1024 * 1024 * 10))
-                  );
+                      Math.round((toNumber(p.memoria) ?? 0) / (1024 * 1024 * 10))
+                  ));
 
-        const tiempo_restante = tiempo_total;
-        const quantum = 10;
-        const iteracion = typeof p.iteraciones === "number" ? p.iteraciones : 0;
-        const tiempo_cpu = typeof p.tiempo_cpu === "number" ? p.tiempo_cpu : 0;
+        // tiempo_restante: preferir campo real `tiempo_restante`, si no usar avance o tiempo_total
+        const tiempo_restante =
+            toNumber((p as any).tiempo_restante) ??
+            (typeof p.avance === "number"
+                ? Math.max(0, Math.round((1 - Math.min(100, Math.max(0, p.avance))) / 100 * tiempo_total))
+                : tiempo_total);
+
+        // quantum: preferir p.quantum si existe, si no usar heurístico basado en prioridad
+        const quantum =
+            toNumber((p as any).quantum) ??
+            Math.max(4, Math.round(8 * (1 + (10 - prioridad) / 10)));
+
+        // iteracion: normalizar nombre (iteraciones -> iteracion)
+        const iteracion = toNumber((p as any).iteraciones) ?? toNumber((p as any).iteracion) ?? 0;
+
+        const tiempo_cpu = tiempoCpuNum ?? 0;
+
         const progreso =
             typeof p.avance === "number"
                 ? Math.round(Math.max(0, Math.min(100, p.avance)))
+                : // si no hay avance, inferir desde tiempo_total/tiempo_restante
+                  tiempo_total > 0
+                ? Math.round(Math.max(0, Math.min(100, ((tiempo_total - (tiempo_restante ?? tiempo_total)) / tiempo_total) * 100)))
                 : 0;
-        const interactividad = (p.interactividad ??
-            "media") as Process["interactividad"];
+
+        const interactividad = (p.interactividad ?? "media") as Process["interactividad"];
 
         return {
             pid,
@@ -128,7 +163,7 @@ export default function ProcessMonitor() {
 
     const chartData = procesosReales
         .slice()
-        .sort((a, b) => (b.tiempo_cpu ?? 0) - (a.tiempo_cpu ?? 0))
+        .sort((a, b) => (Number(b.tiempo_cpu ?? 0) - Number(a.tiempo_cpu ?? 0)))
         .slice(0, 10)
         .map((p) => ({
             nombre: p.nombre ?? `PID ${p.pid}`,
@@ -176,41 +211,65 @@ export default function ProcessMonitor() {
                                 <TableHead>Nombre</TableHead>
                                 <TableHead>Prioridad</TableHead>
                                 <TableHead>Interactividad</TableHead>
+                                <TableHead>Tiempo Total</TableHead>
+                                <TableHead>Tiempo Restante</TableHead>
+                                <TableHead>Quantum</TableHead>
+                                <TableHead>Iteración</TableHead>
                                 <TableHead>Tiempo CPU (%)</TableHead>
                                 <TableHead>Estado</TableHead>
-                                <TableHead style={{ width: 240 }}>
-                                    % Avance
-                                </TableHead>
-                                <TableHead className="text-center">
-                                    Acciones
-                                </TableHead>
+                                <TableHead style={{ width: 240 }}>% Avance</TableHead>
+                                <TableHead className="text-center">Acciones</TableHead>
                             </TableRow>
                         </TableHeader>
 
                         <TableBody>
                             {pageData.map((p) => (
                                 <TableRow key={p.pid}>
-                                    <TableCell className="min-w-[80px]">
-                                        {p.pid}
-                                    </TableCell>
-                                    <TableCell className="min-w-[200px]">
-                                        {p.nombre}
-                                    </TableCell>
-                                    <TableCell>{p.prioridad ?? "-"}</TableCell>
+                                    <TableCell className="min-w-[80px]">{p.pid}</TableCell>
+                                    <TableCell className="min-w-[200px]">{p.nombre}</TableCell>
+
+                                    {/* Prioridad (si no existe, '-') */}
+                                    <TableCell>{typeof p.prioridad === "number" ? p.prioridad : "-"}</TableCell>
+
+                                    {/* Interactividad */}
+                                    <TableCell>{p.interactividad ?? "-"}</TableCell>
+
+                                    {/* Tiempo total / restante / quantum / iteracion */}
                                     <TableCell>
-                                        {p.interactividad ?? "-"}
+                                        {typeof (p as any).tiempo_total === "number"
+                                            ? (p as any).tiempo_total
+                                            : typeof p.tiempo_cpu === "number"
+                                                ? Math.round(p.tiempo_cpu)
+                                                : "-"}
                                     </TableCell>
                                     <TableCell>
-                                        {(p.tiempo_cpu ?? 0).toFixed(2)}
+                                        {typeof (p as any).tiempo_restante === "number"
+                                            ? (p as any).tiempo_restante
+                                            : "-"}
                                     </TableCell>
+                                    <TableCell>
+                                        {typeof (p as any).quantum === "number"
+                                            ? (p as any).quantum
+                                            : (p as any).quantum ?? "-"}
+                                    </TableCell>
+                                    <TableCell>
+                                        {typeof (p as any).iteraciones === "number"
+                                            ? (p as any).iteraciones
+                                            : (p as any).iteracion ?? "-"}
+                                    </TableCell>
+
+                                    <TableCell>{(Number(p.tiempo_cpu ?? 0)).toFixed(2)}</TableCell>
+
                                     <TableCell>{p.estado ?? "-"}</TableCell>
+
                                     <TableCell>
-                                        <div className="w-full">
-                                            <Progress
-                                                value={Math.round(
-                                                    (p.avance ?? 0) as number
-                                                )}
-                                            />
+                                        <div className="w-full flex items-center gap-2">
+                                            <div className="flex-1">
+                                                <Progress value={Math.round((p.avance ?? 0) as number)} />
+                                            </div>
+                                            <div className="w-12 text-right text-sm">
+                                                {Math.round((p.avance ?? 0) as number)}%
+                                            </div>
                                         </div>
                                     </TableCell>
 
@@ -218,23 +277,14 @@ export default function ProcessMonitor() {
                                         <div className="flex items-center justify-center h-full">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button
-                                                        variant="ghost"
-                                                        className="justify-center"
-                                                    >
+                                                    <Button variant="ghost" className="justify-center">
                                                         <EllipsisVertical />
                                                     </Button>
                                                 </DropdownMenuTrigger>
 
                                                 <DropdownMenuContent>
-                                                    <Button
-                                                        variant="ghost"
-                                                        onClick={() =>
-                                                            simularProceso(p)
-                                                        }
-                                                    >
-                                                        Simulación de este
-                                                        proceso
+                                                    <Button variant="ghost" onClick={() => simularProceso(p)}>
+                                                        Simulación de este proceso
                                                     </Button>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -277,9 +327,7 @@ export default function ProcessMonitor() {
                                 .map((n) => (
                                     <Button
                                         key={n}
-                                        variant={
-                                            n === page ? "default" : "ghost"
-                                        }
+                                        variant={n === page ? "default" : "ghost"}
                                         onClick={() => setPage(n)}
                                     >
                                         {n}

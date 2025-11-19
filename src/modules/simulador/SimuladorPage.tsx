@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
-import {  Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import {
     Sheet,
     SheetContent,
@@ -108,8 +108,19 @@ export default function SimuladorPage() {
             const prevP = prev[idx];
             const updated = { ...prevP, ...cambios };
 
+            // Si se intenta poner en 'ejecutando', forzar que nadie más esté en 'ejecutando'
+            if (cambios.estado === "ejecutando") {
+                return prev.map((p) =>
+                    p.pid === pid
+                        ? updated
+                        : p.estado === "ejecutando"
+                        ? { ...p, estado: "listo", tiempo_cpu: 0 }
+                        : p
+                );
+            }
+
+            // Si se cambió a 'listo' desde otro estado, lo movemos al final de la cola
             if (cambios.estado === "listo" && prevP.estado !== "listo") {
-                // remover y añadir al final
                 return prev.filter((p) => p.pid !== pid).concat(updated);
             }
 
@@ -211,7 +222,6 @@ export default function SimuladorPage() {
         confirmToastIdRef.current = id;
     };
 
-
     // los procesos no terminados y no suspendidos pasan a 'listo'
     // todos los procesos no terminados pasan a 'inactivo'
     const handleToggleRunning = () => {
@@ -228,7 +238,7 @@ export default function SimuladorPage() {
                 )
             );
         } else {
-            // detenido: todos (no terminados) en 'inactivo' 
+            // detenido: todos (no terminados) en 'inactivo'
             setProcesos((prev) =>
                 prev.map((p) =>
                     p.estado !== "terminado"
@@ -324,6 +334,7 @@ export default function SimuladorPage() {
                                     setOpenSheet(false);
                                     setInitialFromMonitor(null);
                                 }}
+                                existingPids={procesos.map((p) => p.pid)} // <--- PASAR existingPids
                             />
                         </SheetContent>
                     </Sheet>
@@ -378,6 +389,7 @@ export default function SimuladorPage() {
                                 );
                             }}
                             onCancel={() => setEditing(null)}
+                            existingPids={procesos.map((p) => p.pid)} // opcional, útil si el form usa existingPids internamente
                         />
                     </SheetContent>
                 </Sheet>
