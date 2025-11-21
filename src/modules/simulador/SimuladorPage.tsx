@@ -386,7 +386,7 @@ export default function SimuladorPage() {
                                 );
                             }}
                             onCancel={() => setEditing(null)}
-                            existingPids={procesos.map((p) => p.pid)} // opcional, útil si el form usa existingPids internamente
+                            existingPids={procesos.map((p) => p.pid)} 
                         />
                     </SheetContent>
                 </Sheet>
