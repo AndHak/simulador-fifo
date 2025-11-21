@@ -254,6 +254,7 @@ export default function SimuladorPage() {
             if (!prev.length) return prev;
             const copia = prev.map((p) => ({ ...p }));
 
+            // Normalizar estados y CPU
             for (let i = 0; i < copia.length; i++) {
                 if (
                     copia[i].estado !== "terminado" &&
@@ -261,7 +262,6 @@ export default function SimuladorPage() {
                 ) {
                     copia[i].estado = "listo";
                 }
-                // Normalizar CPU: solo el activo tendrá >0
                 copia[i].tiempo_cpu = 0;
             }
 
@@ -269,13 +269,10 @@ export default function SimuladorPage() {
             if (idx === -1) return copia;
 
             const procesoActivo = copia[idx];
-            const slice = Math.min(
-                procesoActivo.quantum,
-                procesoActivo.tiempo_restante
-            );
+
             const tiempo_restante = Math.max(
                 0,
-                procesoActivo.tiempo_restante - slice
+                procesoActivo.tiempo_restante - 10
             );
             const progreso = Math.round(
                 ((procesoActivo.tiempo_total - tiempo_restante) /

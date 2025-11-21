@@ -115,11 +115,7 @@ export default function ProcessMonitor() {
                   ));
 
         // tiempo_restante: preferir campo real `tiempo_restante`, si no usar avance o tiempo_total
-        const tiempo_restante =
-            toNumber((p as any).tiempo_restante) ??
-            (typeof p.avance === "number"
-                ? Math.max(0, Math.round((1 - Math.min(100, Math.max(0, p.avance))) / 100 * tiempo_total))
-                : tiempo_total);
+        const tiempo_restante = tiempo_total;
 
         // quantum: preferir p.quantum si existe, si no usar heurístico basado en prioridad
         const quantum =
@@ -213,7 +209,6 @@ export default function ProcessMonitor() {
                                 <TableHead>Interactividad</TableHead>
                                 <TableHead>Tiempo Total</TableHead>
                                 <TableHead>Tiempo Restante</TableHead>
-                                <TableHead>Quantum</TableHead>
                                 <TableHead>Iteración</TableHead>
                                 <TableHead>Tiempo CPU (%)</TableHead>
                                 <TableHead>Estado</TableHead>
@@ -247,11 +242,7 @@ export default function ProcessMonitor() {
                                             ? (p as any).tiempo_restante
                                             : "-"}
                                     </TableCell>
-                                    <TableCell>
-                                        {typeof (p as any).quantum === "number"
-                                            ? (p as any).quantum
-                                            : (p as any).quantum ?? "-"}
-                                    </TableCell>
+
                                     <TableCell>
                                         {typeof (p as any).iteraciones === "number"
                                             ? (p as any).iteraciones

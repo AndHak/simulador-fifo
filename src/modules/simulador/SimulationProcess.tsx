@@ -22,7 +22,6 @@ import {
   RotateCcw,
   CheckLine,
   Pause,
-  GripVertical,
 } from "lucide-react";
 import { Process } from "./ProcessFrom";
 
@@ -102,8 +101,6 @@ export default function SimulationProcess({
     onSuspender,
   }: SRProps) {
     const {
-      attributes,
-      listeners,
       setNodeRef,
       transform,
       transition,
@@ -122,7 +119,6 @@ export default function SimulationProcess({
     // helper display helpers
     const showNum = (v: number | undefined | null) =>
       typeof v === "number" ? v : "-";
-    const showBool = (v?: boolean) => (v ? "Sí" : "No");
 
     return (
       <TableRow
@@ -132,17 +128,6 @@ export default function SimulationProcess({
       >
         <TableCell className="w-12">
           <div className="flex items-center gap-2 mr-10">
-            <Button
-              variant="ghost"
-              size="icon"
-              // solo permite arrastrar si el menú no está abierto, asi no colapsa el dropdown
-              {...attributes}
-              {...(!isMenuOpen ? listeners : {})}
-              className="p-1 h-6 w-6 flex items-center justify-center cursor-grab"
-              aria-label={`Mover proceso ${p.pid}`}
-            >
-              <GripVertical className="h-4 w-4" />
-            </Button>
             <span className="text-sm text-muted-foreground select-none">
               {idx + 1}
             </span>
@@ -164,8 +149,6 @@ export default function SimulationProcess({
         {/* Tiempo Restante */}
         <TableCell>{showNum(p.tiempo_restante)}</TableCell>
 
-        {/* Quantum */}
-        <TableCell>{showNum(p.quantum)}</TableCell>
 
         {/* Iteración */}
         <TableCell>{showNum(p.iteracion)}</TableCell>
@@ -314,7 +297,6 @@ export default function SimulationProcess({
                 <TableHead>Interactividad</TableHead>
                 <TableHead>Tiempo Total</TableHead>
                 <TableHead>Tiempo Restante</TableHead>
-                <TableHead>Quantum</TableHead>
                 <TableHead>Iteración</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Progreso</TableHead>
