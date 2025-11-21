@@ -331,7 +331,7 @@ export default function SimuladorPage() {
                                     setOpenSheet(false);
                                     setInitialFromMonitor(null);
                                 }}
-                                existingPids={procesos.map((p) => p.pid)} // <--- PASAR existingPids
+                                existingPids={procesos.map((p) => p.pid)} 
                             />
                         </SheetContent>
                     </Sheet>
