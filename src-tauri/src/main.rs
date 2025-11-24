@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 // Imports principales
 use serde::Serialize; // para serializar la struct Proceso a JSON
 use sysinfo::{ProcessExt, System, SystemExt, PidExt, ProcessStatus}; // sysinfo para leer procesos
@@ -6,9 +8,13 @@ use std::collections::HashMap; // mapa para estado por pid
 use std::sync::Mutex; // Mutex para sincronizar acceso al estado global
 use std::time::Instant; // marca de tiempo de alta resolución
 
+
+
 // ----- Estructura que serializamos al frontend -----
 // Incluye los campos antiguos y los nuevos campos de tiempo + progreso + interactividad
 #[derive(Serialize)]
+
+
 pub struct Proceso {
   pub pid: String,           // pid serializado como string para evitar problemas en TS
   pub nombre: String,        // nombre del proceso
