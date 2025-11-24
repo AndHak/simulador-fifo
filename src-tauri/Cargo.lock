@@ -3502,6 +3502,7 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 name = "simulador-fifo"
 version = "0.1.0"
 dependencies = [
+ "once_cell",
  "serde",
  "serde_json",
  "sysinfo 0.28.4",
