@@ -1,466 +1,567 @@
-import { useState, useEffect, useRef } from "react"; // hooks React: estado, efectos y refs
-import { useLocation } from "react-router-dom"; // para leer location.state (navegación)
-import { Plus, Trash2 } from "lucide-react"; // iconos usados en UI
+import { useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
+import { DockIcon, Plus, Trash2 } from "lucide-react";
 import {
-    Sheet,
-    SheetContent,
-    SheetTrigger,
-} from "@/shared/components/ui/sheet"; // componentes UI: sheet (panel lateral)
-import { Button } from "@/shared/components/ui/button"; // componente Button reutilizable
-import SimulationProcess from "./SimulationProcess"; // componente que renderiza la lista de procesos
-import SystemGraphics from "./SystemGraphics"; // componente que muestra gráficas del sistema
-import ProcessForm, { Process } from "./ProcessFrom"; // formulario y tipo Process
-import { toast, ToastContainer } from "react-toastify"; // notificaciones tipo toast
-import { createToastConfig } from "@/shared/utils/notify"; // helper para configurar ToastContainer
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/shared/components/ui/sheet";
+import { Button } from "@/shared/components/ui/button";
+import SimulationProcess from "./SimulationProcess";
+import SystemGraphics from "./SystemGraphics";
+import ProcessForm, { Process } from "./ProcessFrom";
+import QuickLaunchBar from "./QuickLaunchBar";
+import { toast, ToastContainer } from "react-toastify";
+import { createToastConfig } from "@/shared/utils/notify";
 import {
-    Tooltip,
-    TooltipTrigger,
-    TooltipContent,
-} from "@/shared/components/ui/tooltip"; // componente tooltip para ayudas en UI
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/shared/components/ui/tooltip";
 
-/**
- * SimuladorPage
- *
- * Componente principal del simulador FIFO.
- */
 export default function SimuladorPage() {
-    const confirmToastIdRef = useRef<string | number | null>(null); // ref para guardar id del toast de confirmación
+  const confirmToastIdRef = useRef<string | number | null>(null);
 
-    const [procesos, setProcesos] = useState<Process[]>(() => { // estado que guarda la lista de procesos
-        const saved = localStorage.getItem("procesos_simulador"); // intentar leer persistencia
-        if (saved) {
-            try {
-                return JSON.parse(saved); // parsear JSON guardado
-            } catch {
-                console.error("Error al parsear procesos guardados"); // log si falla parseo
-                return []; // fallback a array vacío
-            }
-        }
-        return []; // si no hay nada guardado devolver array vacío
-    });
+  const [procesos, setProcesos] = useState<Process[]>(() => {
+    const saved = localStorage.getItem("procesos_simulador");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        console.error("Error al parsear procesos guardados");
+        return [];
+      }
+    }
+    return [];
+  });
 
-    const [editing, setEditing] = useState<Process | null>(null); // proceso que se está editando (null si ninguno)
-    const [openSheet, setOpenSheet] = useState(false); // controla apertura del Sheet
-    const [initialFromMonitor, setInitialFromMonitor] =
-        useState<Process | null>(null); // proceso pasado desde monitor para prellenar formulario
-    const [running, setRunning] = useState(false); // indica si la simulación está corriendo
-    const [theme, setTheme] = useState<"dark" | "light">("light"); // tema para toasts
+  const [showRegistro, setShowRegistro] = useState(false);
+  const [editing, setEditing] = useState<Process | null>(null);
+  const [openSheet, setOpenSheet] = useState(false);
+  const [initialFromMonitor, setInitialFromMonitor] = useState<Process | null>(null);
+  const [running, setRunning] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("light");
 
-    const location = useLocation(); // obtener objeto location del router
+  const location = useLocation();
+  const initialPidSelectionDoneRef = useRef<boolean>(false);
 
-    useEffect(() => {
-        try {
-            localStorage.setItem(
-                "procesos_simulador",
-                JSON.stringify(procesos)
-            ); // persistir procesos en localStorage al cambiar
-        } catch (err) {
-            console.error("Error guardando procesos en localStorage", err); // manejar error de escritura
-        }
-    }, [procesos]); // efecto depende de `procesos`
+  useEffect(() => {
+    try {
+      localStorage.setItem("procesos_simulador", JSON.stringify(procesos));
+    } catch (err) {
+      console.error("Error guardando procesos en localStorage", err);
+    }
+  }, [procesos]);
 
-    useEffect(() => {
-        const state = location.state as { simulatedProcess?: Process } | null; // extraer state de location
-        if (state?.simulatedProcess) {
-            setInitialFromMonitor(state.simulatedProcess); // guardar proceso inicial para el sheet
-            setOpenSheet(true); // abrir sheet si vino un proceso desde el monitor
-            window.history.replaceState({}, document.title); // limpiar state de navegación para evitar reabrir al refrescar
-        }
-    }, [location.state]); // efecto cuando cambia location.state
+  useEffect(() => {
+    const state = location.state as { simulatedProcess?: Process } | null;
+    if (state?.simulatedProcess) {
+      setInitialFromMonitor(state.simulatedProcess);
+      setOpenSheet(true);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
-    useEffect(() => {
-        const media = window.matchMedia("(prefers-color-scheme: dark)"); // escuchar preferencia color del sistema
-        const handleThemeChange = () =>
-            setTheme(media.matches ? "dark" : "light"); // actualizar estado `theme`
-        handleThemeChange(); // setear inicialmente
-        media.addEventListener("change", handleThemeChange); // agregar listener para cambios
-        return () => media.removeEventListener("change", handleThemeChange); // limpiar listener al desmontar
-    }, []); // solo se ejecuta al montar
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleThemeChange = () => setTheme(media.matches ? "dark" : "light");
+    handleThemeChange();
+    media.addEventListener("change", handleThemeChange);
+    return () => media.removeEventListener("change", handleThemeChange);
+  }, []);
 
-    /**
-     * crearProceso
-     * - Añade un proceso nuevo a la lista con valores por defecto/seguridad.
-     */
-    const crearProceso = (bcp: Process) => {
-        setProcesos((prev) => {
-            if (prev.some((p) => p.pid === bcp.pid)) { // evitar PID duplicado
-                toast.error("El PID ya existe. Usa uno diferente.", {
-                    toastId: `err-pid-${bcp.pid}`,
-                });
-                return prev; // no modificar estado
-            }
+  // ---------- Helpers ----------
+  const compareByPid = (a: Process | { pid: string }, b: Process | { pid: string }) => {
+    const na = Number(a.pid);
+    const nb = Number(b.pid);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+    return a.pid.localeCompare(b.pid);
+  };
 
-            const initialEstado =
-                bcp.estado ?? (running ? "listo" : "inactivo"); // decidir estado inicial según `running`
-
-            const createdAt = bcp.created_at ?? Date.now(); // timestamp de creación (ms) si no viene, generar ahora
-
-            const toAdd: Process = {
-                ...bcp, // mantener campos proporcionados
-                created_at: createdAt, // asegurar created_at
-                t_inicio: bcp.t_inicio ?? null, // inicio (null si no existe)
-                t_fin: bcp.t_fin ?? null, // fin (null si no existe)
-                tiempo_espera: bcp.tiempo_espera ?? 0, // tiempo de espera por defecto 0
-                tiempo_restante: bcp.tiempo_restante ?? bcp.tiempo_total, // si no viene, igual al tiempo_total
-                estado: initialEstado, // estado calculado
-                resident: bcp.resident ?? true, // por defecto resident true
-            };
-
-            const next = [...prev, toAdd]; // añadir al final (FIFO)
-            toast.success(`Proceso ${bcp.nombre} agregado correctamente`, {
-                toastId: `added-${bcp.pid}`,
-            }); // notificar creación
-            setOpenSheet(false); // cerrar sheet
-            setInitialFromMonitor(null); // limpiar posible initialFromMonitor
-            return next; // nuevo estado
-        });
-    };
-
-    /**
-     * actualizarProceso
-     * - Actualiza campos parciales de un proceso por pid.
-     * - Si se pone en 'ejecutando', asegura que nadie más quede en 'ejecutando'.
-     * - Si se pone en 'listo' desde otro estado, lo mueve al final (FIFO).
-     */
-    const actualizarProceso = (pid: string, cambios: Partial<Process>) => {
-        setProcesos((prev) => {
-            const idx = prev.findIndex((p) => p.pid === pid); // localizar índice
-            if (idx === -1) return prev; // si no existe, no hacer nada
-            const prevP = prev[idx]; // proceso previo
-            const updated = { ...prevP, ...cambios }; // merge con cambios
-
-            if (cambios.estado === "ejecutando") {
-                return prev.map((p) =>
-                    p.pid === pid
-                        ? updated // actualizar el que se ejecuta
-                        : p.estado === "ejecutando"
-                        ? { ...p, estado: "listo", tiempo_cpu: 0 } // resetear cualquier otro que estuviera ejecutando
-                        : p
-                );
-            }
-
-            if (cambios.estado === "listo" && prevP.estado !== "listo") {
-                return prev.filter((p) => p.pid !== pid).concat(updated); // mover al final
-            }
-
-            const copia = [...prev]; // copia del array
-            copia[idx] = updated; // reemplazar en su lugar
-            setOpenSheet(false); // cerrar sheet si estaba abierto
-            return copia; // retornar nuevo estado
-        });
-    };
-
-    /**
-     * eliminarProceso
-     * - Elimina por pid y notifica si existía o no.
-     */
-    const eliminarProceso = (pid: string) => {
-        let existed = false; // bandera para saber si existía
-        setProcesos((prev) => {
-            if (prev.some((x) => x.pid === pid)) existed = true; // marcar si existía
-            return prev.filter((x) => x.pid !== pid); // filtrar para eliminar
-        });
-        if (existed) {
-            toast.info(`Proceso ${pid} eliminado`, {
-                toastId: `deleted-${pid}`,
-            }); // notificar eliminación
-        } else {
-            toast.warning(`Proceso ${pid} no encontrado`, {
-                toastId: `delete-notfound-${pid}`,
-            }); // notificar intento de eliminar no existente
-        }
-    };
-
-    /**
-     * reordenarProcesos
-     * - Mueve elemento de índice `from` a `to` validando rangos.
-     */
-    const reordenarProcesos = (from: number, to: number) => {
-        setProcesos((prev) => {
-            const copia = [...prev]; // copiar array
-            if (
-                from < 0 ||
-                from >= copia.length ||
-                to < 0 ||
-                to >= copia.length
-            )
-                return copia; // si índices inválidos, no cambiar
-            const [moved] = copia.splice(from, 1); // extraer elemento
-            copia.splice(to, 0, moved); // insertarlo en nueva posición
-            return copia; // devolver nuevo orden
-        });
-    };
-
-    /**
-     * borrarTodos
-     * - Muestra un toast con confirmación para borrar toda la lista.
-     */
-    const borrarTodos = () => {
-        if (!procesos.length) {
-            toast.warning("No hay procesos para borrar"); // aviso si lista vacía
-            return;
-        }
-
-        if (confirmToastIdRef.current !== null) return; // si ya hay confirm abierto, no abrir otro
-
-        const ConfirmContent = () => ( // componente inline para el contenido del toast
-            <div className="max-w-xs">
-                <div className="font-semibold mb-2">
-                    ¿Borrar todos los procesos?
-                </div>
-                <div className="text-sm mb-3">
-                    Esta acción no se puede deshacer.
-                </div>
-
-                <div className="flex gap-2 justify-end">
-                    <Button
-                        variant="destructive"
-                        onClick={() => {
-                            setProcesos([]); // vaciar lista
-                            if (confirmToastIdRef.current !== null)
-                                toast.dismiss(confirmToastIdRef.current); // cerrar el toast de confirm
-                            confirmToastIdRef.current = null; // limpiar ref
-                            toast.success(
-                                "Todos los procesos han sido eliminados"
-                            ); // notificar éxito
-                        }}
-                    >
-                        Borrar
-                    </Button>
-
-                    <Button
-                        variant="outline"
-                        onClick={() => {
-                            if (confirmToastIdRef.current !== null)
-                                toast.dismiss(confirmToastIdRef.current); // cerrar confirm
-                            confirmToastIdRef.current = null; // limpiar ref
-                            toast.info("Operación cancelada"); // notificar cancelación
-                        }}
-                    >
-                        Cancelar
-                    </Button>
-                </div>
-            </div>
-        );
-
-        const id = toast(<ConfirmContent />, {
-            autoClose: false,
-            closeOnClick: false,
-            pauseOnHover: false,
-            icon: false,
-        }); // crear toast persistente con el contenido de confirmación
-
-        confirmToastIdRef.current = id; // guardar id del toast para control
-    };
-
-    /**
-     * handleToggleRunning
-     * - Alterna el modo ejecución/detenido y ajusta estados de procesos.
-     */
-    const handleToggleRunning = () => {
-        const next = !running; // valor opuesto
-        setRunning(next); // actualizar estado
-
-        if (next) {
-            setProcesos((prev) =>
-                prev.map((p) =>
-                    p.estado !== "terminado" && p.estado !== "suspendido"
-                        ? { ...p, estado: "listo" } // arrancando: marcar listos los no terminados/suspendidos
-                        : p
-                )
-            );
-        } else {
-            setProcesos((prev) =>
-                prev.map((p) =>
-                    p.estado !== "terminado"
-                        ? { ...p, estado: "inactivo", tiempo_cpu: 0 } // detenido: poner inactivo y reset CPU
-                        : p
-                )
-            );
-        }
-    };
-
-    /**
-     * simularPasoQuantum
-     * - Ejecuta un tick de simulación FIFO: normaliza estados, encuentra primer listo,
-     *   decrementa tiempo_restante en 1 (quantum = 1), actualiza progreso, iteración, inicio/fin/espera.
-     */
-    const simularPasoQuantum = () => {
+  // ---------- crearProceso ----------
+  const crearProceso = (bcp: Process) => {
     setProcesos((prev) => {
-        if (!prev.length) return prev; // si no hay procesos, nada que hacer
-        const copia = prev.map((p) => ({ ...p })); // clonar para mutar sin afectar referencias externas
+      if (prev.some((p) => p.pid === bcp.pid)) {
+        toast.error("El PID ya existe. Usa uno diferente.", {
+          toastId: `err-pid-${bcp.pid}`,
+        });
+        return prev;
+      }
 
-        // Normalizar estados y resetear tiempo_cpu por defecto
-        for (let i = 0; i < copia.length; i++) {
-            if (
-                copia[i].estado !== "terminado" &&
-                copia[i].estado !== "suspendido"
-            ) {
-                copia[i].estado = "listo"; // marcar como listo si no terminado/suspendido
-            }
-            copia[i].tiempo_cpu = 0; // resetear uso CPU por defecto
-        }
+      const tiempo_total = typeof bcp.tiempo_total === "number" ? bcp.tiempo_total : 0;
+      const toAdd: Process = {
+        ...bcp,
+        created_at: bcp.created_at ?? 0,
+        t_inicio: bcp.t_inicio ?? null,
+        t_fin: bcp.t_fin ?? null,
+        tiempo_espera: bcp.tiempo_espera ?? 0,
+        tiempo_restante: typeof bcp.tiempo_restante === "number" ? bcp.tiempo_restante : tiempo_total,
+        tiempo_cpu: bcp.tiempo_cpu ?? 0,
+        iteracion: bcp.iteracion ?? 0,
+        progreso: bcp.progreso ?? 0,
+        estado: bcp.estado ?? "listo",
+        interactividad: bcp.interactividad,
+        interactividad_inicial: bcp.interactividad_inicial ?? bcp.interactividad,
+        resident: bcp.resident ?? true,
+      };
 
-        // Encontrar el primer proceso en estado 'listo' (comportamiento FIFO)
-        const idx = copia.findIndex((p) => p.estado === "listo");
-        if (idx === -1) return copia; // si no hay listos, devolver copia
+      toast.success(`Proceso ${bcp.nombre} agregado correctamente`, {
+        toastId: `added-${bcp.pid}`,
+      });
+      setOpenSheet(false);
+      setInitialFromMonitor(null);
 
-        const procesoActivo = copia[idx]; // proceso que se va a ejecutar este tick
-
-        // Calcular tiempo de inicio y espera SOLO la primera vez que ejecuta
-        let t_inicio = procesoActivo.t_inicio; // leer posible t_inicio existente
-        let tiempo_espera = procesoActivo.tiempo_espera ?? 0; // tiempo de espera actual o 0
-
-        if (t_inicio === null || t_inicio === undefined) {
-            // Si nunca se ejecutó antes, calcular espera acumulada basada en tiempos totales de procesos anteriores
-            let esperaAcumulada = 0;
-            for (let i = 0; i < idx; i++) {
-                esperaAcumulada += copia[i].tiempo_total; // sumar tiempo_total de los procesos anteriores
-            }
-            
-            tiempo_espera = esperaAcumulada; // tiempo de espera en segundos (entero)
-            t_inicio = esperaAcumulada + 1; // inicio relativo en segundos desde el comienzo de la cola
-        }
-
-        // Restar 1 unidad (quantum = 1) al tiempo resto del proceso activo
-        const tiempo_restante = Math.max(0, procesoActivo.tiempo_restante - 1);
-
-        // Calcular progreso porcentual basado en tiempo_total vs tiempo_restante
-        const progreso = Math.round(
-            ((procesoActivo.tiempo_total - tiempo_restante) /
-                procesoActivo.tiempo_total) *
-                100
-        );
-
-        const terminado = tiempo_restante === 0; // si el tiempo restante llegó a 0, se terminó
-
-        // Calcular t_fin si terminó: t_inicio + tiempo_total (ambos en segundos)
-        let t_fin = procesoActivo.t_fin;
-        if (terminado) {
-            t_fin = (t_inicio ?? 0) + procesoActivo.tiempo_total;
-        }
-
-        // Reemplazar el proceso activo con los nuevos campos actualizados
-        copia[idx] = {
-            ...procesoActivo,
-            tiempo_restante, // nuevo tiempo restante
-            progreso, // progreso %
-            iteracion: procesoActivo.iteracion + 1, // incrementar contador de iteraciones
-            estado: terminado ? "terminado" : "ejecutando", // estado actualizado
-            tiempo_cpu: terminado ? 0 : 100, // si no terminó, simular CPU al 100% para UI
-            t_inicio, // inicio (segundos) si se fijó ahora
-            t_fin, // fin (segundos) si se terminó
-            tiempo_espera, // tiempo de espera calculado
-        };
-
-        return copia; // devolver nuevo array de procesos actualizado
+      return [...prev, toAdd];
     });
-};
+  };
 
-    // Loop de simulación: mientras `running` sea true, llamar a simularPasoQuantum cada 1000ms
-    useEffect(() => {
-        if (!running) return; // si no está corriendo, no crear intervalo
-        const interval = setInterval(() => simularPasoQuantum(), 1000); // tick cada 1s
-        return () => clearInterval(interval); // limpiar intervalo al desmontar o cuando running cambie
-    }, [running]); // efecto depende de `running`
+  // ---------- handleQuickLaunch ----------
+  const handleQuickLaunch = (processConfig: Process) => {
+    // Generar PID único
+    let newPid = 1;
+    const existingPids = new Set(procesos.map(p => Number(p.pid)).filter(n => !isNaN(n)));
+    while (existingPids.has(newPid)) {
+      newPid++;
+    }
+    
+    const newProcess = {
+      ...processConfig,
+      pid: String(newPid),
+    };
+    
+    crearProceso(newProcess);
+  };
 
-    // ------------------ RENDER ------------------
-    return (
-        <main className="p-6 space-y-6 relative">
-            <ToastContainer {...createToastConfig(theme)} /> {/* container para toasts con configuración de tema */}
+  // ---------- actualizarProceso ----------
+  const actualizarProceso = (pid: string, cambios: Partial<Process>) => {
+    setProcesos((prev) => {
+      const idx = prev.findIndex((p) => p.pid === pid);
+      if (idx === -1) return prev;
+      const prevP = prev[idx];
+      const updated = { ...prevP, ...cambios };
 
-            <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">
-                    Simulador de Procesos (FIFO)
-                </h1>
+      if (cambios.estado === "ejecutando") {
+        // Calcular tiempo actual de simulación
+        const tiempoActual = prev.reduce((max, p) => {
+          const tiempoProc = (p.iteracion ?? 0) + (p.tiempo_espera ?? 0);
+          return Math.max(max, tiempoProc);
+        }, 0);
+        
+        return prev.map((p) =>
+          p.pid === pid
+            ? { ...updated, estado: "ejecutando", t_inicio: p.t_inicio ?? tiempoActual }
+            : p.estado === "ejecutando"
+            ? { ...p, estado: "listo", tiempo_cpu: p.tiempo_cpu ?? 0 }
+            : p
+        );
+      }
 
-                <div className="flex gap-2 items-center">
-                    <Button
-                        variant={running ? "destructive" : "default"} // estilo cambia si está corriendo
-                        onClick={handleToggleRunning} // alternar ejecución
-                    >
-                        {running ? "Detener" : "Iniciar"} {/* texto según estado */}
-                    </Button>
+      if (cambios.estado === "listo" && prevP.estado !== "listo") {
+        return prev.filter((p) => p.pid !== pid).concat({ ...updated, estado: "listo" });
+      }
 
-                    {/* Sheet para crear proceso */}
-                    <Sheet open={openSheet} onOpenChange={setOpenSheet}>
-                        <SheetTrigger asChild>
-                            <Button>
-                                <Plus className="mr-2 h-4 w-4" /> Crear proceso
-                            </Button>
-                        </SheetTrigger>
-                        <SheetContent className="w-[480px]">
-                            <ProcessForm
-                                initial={initialFromMonitor ?? undefined} // prellenar si viene desde monitor
-                                onSave={crearProceso} // callback al guardar
-                                onCancel={() => { // cancelar creación
-                                    setOpenSheet(false);
-                                    setInitialFromMonitor(null);
-                                }}
-                                existingPids={procesos.map((p) => p.pid)} // pasar PIDs existentes para validación
-                            />
-                        </SheetContent>
-                    </Sheet>
+      if (cambios.estado === "suspendido") {
+        const copia = prev.filter((p) => p.pid !== pid);
+        // Al suspender manualmente, reseteamos el contador a su valor inicial
+        copia.push({ 
+          ...updated, 
+          estado: "suspendido", 
+          interactividad: prevP.interactividad_inicial ?? prevP.interactividad 
+        });
+        return copia;
+      }
 
-                    {/* Botón borrar todos envuelto en tooltip */}
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                onClick={borrarTodos} // abrir confirm
-                                title="Borrar todos los procesos"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            Borrar todos los procesos
-                        </TooltipContent>
-                    </Tooltip>
-                </div>
-            </div>
+      const copia = [...prev];
+      copia[idx] = updated;
+      return copia;
+    });
+    setOpenSheet(false);
+  };
 
-            {/* Lista/monitor de procesos con callbacks para editar/suspender/eliminar/actualizar/reordenar */}
-            <SimulationProcess
-                procesos={procesos}
-                onEditar={(p) => setEditing(p)} // abrir edición
-                onSuspender={(pid) =>
-                    actualizarProceso(pid, {
-                        estado: "suspendido",
-                        tiempo_cpu: 0,
-                        resident: true,
-                    })
-                } // acción suspender delegada
-                onReanudar={(pid) =>
-                    actualizarProceso(pid, { estado: "listo" })
-                } // reanudar (pasar a listo)
-                onEliminar={eliminarProceso} // eliminar delegado
-                onActualizar={actualizarProceso} // actualizar delegado
-                onReorder={reordenarProcesos} // reordenar delegado
-            />
+  // ---------- reordenarProcesos ----------
+  const reordenarProcesos = (from: number, to: number) => {
+    setProcesos((prev) => {
+      const copia = [...prev];
+      if (from < 0 || from >= copia.length || to < 0 || to >= copia.length) return copia;
+      const [moved] = copia.splice(from, 1);
+      copia.splice(to, 0, moved);
+      return copia;
+    });
+  };
 
-            {/* Gráficas y resumen del sistema */}
-            <SystemGraphics procesos={procesos} />
+  // ---------- eliminarProceso ----------
+  const eliminarProcesoLocal = (pid: string) => {
+    let existed = false;
+    setProcesos((prev) => {
+      if (prev.some((x) => x.pid === pid)) existed = true;
+      return prev.filter((x) => x.pid !== pid);
+    });
+    if (existed) {
+      toast.info(`Proceso ${pid} eliminado`, {
+        toastId: `deleted-${pid}`,
+      });
+    } else {
+      toast.warning(`Proceso ${pid} no encontrado`, {
+        toastId: `delete-notfound-${pid}`,
+      });
+    }
+  };
 
-            {/* Sheet de edición si `editing` no es null */}
-            {editing && (
-                <Sheet open={!!editing} onOpenChange={() => setEditing(null)}>
-                    <SheetContent className="w-[480px]">
-                        <ProcessForm
-                            initial={editing} // pasar proceso a editar
-                            onSave={(bcp) => {
-                                actualizarProceso(editing.pid, bcp); // guardar cambios
-                                setEditing(null); // cerrar sheet
-                                toast.success(
-                                    `Proceso ${bcp.nombre} actualizado`,
-                                    { toastId: `updated-${editing.pid}` }
-                                ); // notificar éxito
-                            }}
-                            onCancel={() => setEditing(null)} // cancelar edición
-                            existingPids={procesos.map((p) => p.pid)} // validar PIDs
-                        />
-                    </SheetContent>
-                </Sheet>
-            )}
-        </main>
+  // ---------- simularPasoQuantum (VERSIÓN CORREGIDA) ----------
+  const simularPasoQuantum = () => {
+    setProcesos((prev) => {
+      if (!prev.length) return prev;
+
+      let copia = prev.map((p) => ({ ...p }));
+      
+      // Obtener el tiempo actual de simulación (contar ticks transcurridos)
+      const tiempoActual = copia.reduce((max, p) => {
+        const tiempoProc = (p.iteracion ?? 0) + (p.tiempo_espera ?? 0);
+        return Math.max(max, tiempoProc);
+      }, 0);
+
+      // PASO 1: Manejo de Suspendidos (Countdown)
+      // Decrementar interactividad de TODOS los suspendidos
+      copia = copia.map(p => {
+        if (p.estado === "suspendido") {
+           // Si ya es 0 o menos, está listo para salir, pero lo movemos abajo
+           // Si es mayor a 0, decrementamos
+           if (p.interactividad > 0) {
+             return { ...p, interactividad: p.interactividad - 1 };
+           }
+        }
+        return p;
+      });
+
+      // Mover a Listo los que llegaron a 0
+      // Lo hacemos en un loop inverso o filter para manejar indices correctamente si borramos
+      // Pero mejor: identificar indices a mover
+      const toReadyIndices = copia
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.estado === "suspendido" && p.interactividad <= 0)
+        .map(({ i }) => i)
+        .sort((a, b) => b - a); // Descendente para borrar sin afectar indices previos
+
+      if (toReadyIndices.length > 0) {
+        const movedProcesses: Process[] = [];
+        toReadyIndices.forEach(idx => {
+          const [proc] = copia.splice(idx, 1);
+          proc.estado = "listo";
+          movedProcesses.push(proc);
+        });
+        // Agregar al final de la cola
+        copia.push(...movedProcesses);
+      }
+
+      // PASO 2: Encontrar el proceso ejecutando
+      let execIdx = copia.findIndex((p) => p.estado === "ejecutando");
+
+      // PASO 3: Si no hay ejecutando, seleccionar el primer listo (FIFO)
+      if (execIdx === -1) {
+        if (!initialPidSelectionDoneRef.current) {
+          // PRIMER inicio: escoger por PID más bajo
+          const readyForFirst = copia.filter((p) => p.estado === "listo");
+          if (readyForFirst.length === 0) return copia;
+          readyForFirst.sort(compareByPid);
+          const pidNext = readyForFirst[0].pid;
+          execIdx = copia.findIndex((p) => p.pid === pidNext);
+          initialPidSelectionDoneRef.current = true;
+        } else {
+          // FIFO: primer listo en la cola
+          execIdx = copia.findIndex((p) => p.estado === "listo");
+          if (execIdx === -1) return copia;
+        }
+
+        // Marcar como ejecutando y guardar el tiempo de inicio (en segundos desde el inicio de la simulación)
+        if (execIdx !== -1) {
+          copia[execIdx] = {
+            ...copia[execIdx],
+            estado: "ejecutando",
+            tiempo_cpu: 0,
+            t_inicio: copia[execIdx].t_inicio ?? tiempoActual,
+          };
+        }
+      }
+
+      const proc = execIdx !== -1 ? copia[execIdx] : null;
+      if (!proc) return copia;
+
+      // PASO 4: Ejecutar 1 tick (1 segundo)
+      proc.tiempo_cpu = (proc.tiempo_cpu ?? 0) + 1;
+      // NOTA: Ya no incrementamos iteracion aquí por cada tick
+      
+      const beforeRemaining = typeof proc.tiempo_restante === "number" ? proc.tiempo_restante : proc.tiempo_total ?? 0;
+      proc.tiempo_restante = Math.max(0, beforeRemaining - 1);
+
+      // Actualizar progreso
+      if (typeof proc.tiempo_total === "number" && proc.tiempo_total > 0) {
+        proc.progreso = Math.round(((proc.tiempo_total - proc.tiempo_restante) / proc.tiempo_total) * 100);
+      }
+
+      // PASO 5: Incrementar tiempo_espera de los listos y suspendidos
+      copia = copia.map((p, idx) =>
+        idx !== execIdx && (p.estado === "listo" || p.estado === "suspendido")
+          ? { ...p, tiempo_espera: (p.tiempo_espera ?? 0) + 1 }
+          : p
+      );
+
+      // Calcular el tiempo actual después de este tick
+      const tiempoFinal = tiempoActual + 1;
+
+      let processFinishedOrSuspended = false;
+
+      // PASO 6: Verificar si terminó
+      if ((proc.tiempo_restante ?? 0) <= 0) {
+        proc.estado = "terminado";
+        proc.t_fin = proc.t_fin ?? tiempoFinal;
+        proc.tiempo_cpu = 0;
+        proc.resident = false;
+        // Al terminar, cuenta como completar su última "rotación"
+        proc.iteracion = (proc.iteracion ?? 0) + 1;
+        processFinishedOrSuspended = true;
+      }
+
+      // PASO 7: Verificar si agotó el quantum (si no terminó)
+      if (!processFinishedOrSuspended) {
+        // Quantum ahora es el número de rotaciones
+        // Slice Time = Tiempo Total / Quantum
+        const total = proc.tiempo_total ?? 0;
+        const rotations = proc.quantum || 1;
+        const sliceTime = Math.ceil(total / rotations);
+
+        if ((proc.tiempo_cpu ?? 0) >= sliceTime) {
+          // Ejecutando → Suspendido
+          proc.estado = "suspendido";
+          proc.tiempo_cpu = 0;
+          // RESETEAR interactividad al valor inicial
+          proc.interactividad = proc.interactividad_inicial ?? 0;
+          
+          // Incrementar iteración (completó una rotación)
+          proc.iteracion = (proc.iteracion ?? 0) + 1;
+
+          // Mover al final de la cola
+          copia.splice(execIdx, 1);
+          copia.push(proc);
+          processFinishedOrSuspended = true;
+        }
+      }
+
+      // PASO 8: Si el proceso actual dejó de ejecutarse, seleccionar INMEDIATAMENTE el siguiente
+      if (processFinishedOrSuspended) {
+        // Buscar siguiente listo
+        const nextExecIdx = copia.findIndex((p) => p.estado === "listo");
+        if (nextExecIdx !== -1) {
+           copia[nextExecIdx] = {
+            ...copia[nextExecIdx],
+            estado: "ejecutando",
+            tiempo_cpu: 0,
+            t_inicio: copia[nextExecIdx].t_inicio ?? tiempoFinal,
+          };
+        }
+      }
+
+      return copia;
+    });
+  };
+
+  // ---------- loop de simulación ----------
+  useEffect(() => {
+    if (!running) return;
+    
+    // Verificar si todos los procesos terminaron
+    const allTerminated = procesos.length > 0 && procesos.every(
+      (p) => p.estado === "terminado"
     );
+    
+    if (allTerminated) {
+      setRunning(false);
+      toast.success("¡Simulación completada! Todos los procesos han terminado.", {
+        toastId: "simulation-completed",
+      });
+      return;
+    }
+    
+    const interval = setInterval(() => simularPasoQuantum(), 1000);
+    return () => clearInterval(interval);
+  }, [running, procesos]);
+
+  // ---------- handleToggleRunning ----------
+  const handleToggleRunning = () => {
+    setRunning((prev) => {
+      const next = !prev;
+      if (next) {
+        setProcesos((prevList) => {
+          if (prevList.some((p) => p.estado === "ejecutando")) return prevList;
+
+          const ready = prevList.filter((p) => p.estado === "listo");
+          if (ready.length === 0) return prevList;
+
+          if (!initialPidSelectionDoneRef.current) {
+            const byPid = [...ready].sort(compareByPid);
+            const pidNext = byPid[0].pid;
+            initialPidSelectionDoneRef.current = true;
+            return prevList.map((p) =>
+              p.pid === pidNext ? { ...p, estado: "ejecutando", t_inicio: p.t_inicio ?? 0 } : p
+            );
+          }
+
+          return prevList;
+        });
+      }
+      return next;
+    });
+  };
+
+  // ---------- borrarTodos ----------
+  const borrarTodos = () => {
+    if (!procesos.length) {
+      toast.warning("No hay procesos para borrar");
+      return;
+    }
+
+    if (confirmToastIdRef.current !== null) return;
+
+    const ConfirmContent = () => (
+      <div className="max-w-xs">
+        <div className="font-semibold mb-2">¿Borrar todos los procesos?</div>
+        <div className="text-sm mb-3">Esta acción no se puede deshacer.</div>
+
+        <div className="flex gap-2 justify-end">
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setProcesos([]);
+              initialPidSelectionDoneRef.current = false;
+              if (confirmToastIdRef.current !== null) toast.dismiss(confirmToastIdRef.current);
+              confirmToastIdRef.current = null;
+              toast.success("Todos los procesos han sido eliminados");
+            }}
+          >
+            Borrar
+          </Button>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (confirmToastIdRef.current !== null) toast.dismiss(confirmToastIdRef.current);
+              confirmToastIdRef.current = null;
+              toast.info("Operación cancelada");
+            }}
+          >
+            Cancelar
+          </Button>
+        </div>
+      </div>
+    );
+
+    const id = toast(<ConfirmContent />, {
+      autoClose: false,
+      closeOnClick: false,
+      pauseOnHover: false,
+      icon: false,
+    });
+
+    confirmToastIdRef.current = id;
+  };
+
+  // ---------- RENDER ----------
+  return (
+    <main className="p-6 space-y-6 relative">
+      <ToastContainer {...createToastConfig(theme)} />
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Simulador de Procesos (FIFO)</h1>
+
+        <div className="flex gap-2 items-center">
+          <Button
+            variant={running ? "destructive" : "default"}
+            onClick={handleToggleRunning}
+          >
+            {running ? "Detener" : "Iniciar"}
+          </Button>
+
+          <Sheet open={openSheet} onOpenChange={setOpenSheet}>
+            <SheetTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Crear proceso
+              </Button>
+            </SheetTrigger>
+            <SheetContent className="w-[480px]">
+              <ProcessForm
+                initial={initialFromMonitor ?? undefined}
+                onSave={crearProceso}
+                onCancel={() => {
+                  setOpenSheet(false);
+                  setInitialFromMonitor(null);
+                }}
+                existingPids={procesos.map((p) => p.pid)}
+              />
+            </SheetContent>
+          </Sheet>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button onClick={borrarTodos} title="Borrar todos los procesos">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Borrar todos los procesos</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button onClick={() => setShowRegistro(true)} title="Registro">
+                Registro
+                <DockIcon className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Ver registro de procesos</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+
+      <QuickLaunchBar 
+        onLaunch={handleQuickLaunch} 
+        existingNames={procesos.map(p => p.nombre)} 
+      />
+
+      <SimulationProcess
+        procesos={procesos}
+        onEditar={(p) => setEditing(p)}
+        onSuspender={(pid) =>
+          actualizarProceso(pid, {
+            estado: "suspendido",
+            tiempo_cpu: 0,
+            resident: true,
+            interactividad: 1,
+          })
+        }
+        onReanudar={(pid) => actualizarProceso(pid, { estado: "listo", interactividad: 2 })}
+        onEliminar={eliminarProcesoLocal}
+        onActualizar={actualizarProceso}
+        onReorder={reordenarProcesos}
+        showRegistro={showRegistro}
+        onCloseRegistro={() => setShowRegistro(false)}
+        onOpenRegistro={() => setShowRegistro(true)}
+      />
+
+      <SystemGraphics procesos={procesos} />
+
+      {editing && (
+        <Sheet open={!!editing} onOpenChange={() => setEditing(null)}>
+          <SheetContent className="w-[480px]">
+            <ProcessForm
+              initial={editing}
+              onSave={(bcp) => {
+                actualizarProceso(editing.pid, bcp);
+                setEditing(null);
+                toast.success(`Proceso ${bcp.nombre} actualizado`, { toastId: `updated-${editing.pid}` });
+              }}
+              onCancel={() => setEditing(null)}
+              existingPids={procesos.map((p) => p.pid)}
+            />
+          </SheetContent>
+        </Sheet>
+      )}
+    </main>
+  );
 }

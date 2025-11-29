@@ -1,10 +1,5 @@
-// Import React y utilidades: memo para memoizar filas, useMemo/useState para estado y optimizaciones
-import React, { useMemo, useState, memo } from "react";
-
-// Componentes UI: Card y su contenido
+import { useMemo, useState, memo } from "react";
 import { Card, CardContent } from "@/shared/components/ui/card";
-
-// Componentes de tabla reutilizables (cabeceras, filas, celdas)
 import {
     Table,
     TableHeader,
@@ -13,18 +8,12 @@ import {
     TableBody,
     TableCell,
 } from "@/shared/components/ui/table";
-
-// Componente Button reutilizable
 import { Button } from "@/shared/components/ui/button";
-
-// Componentes para menú desplegable (Dropdown)
 import {
     DropdownMenu,
     DropdownMenuTrigger,
     DropdownMenuContent,
 } from "@/shared/components/ui/dropdown-menu";
-
-// Iconos usados en las acciones de la fila
 import {
     EllipsisVertical,
     Edit,
@@ -33,174 +22,113 @@ import {
     RotateCcw,
     CheckLine,
     Pause,
+    X,
 } from "lucide-react";
-
-// Import del tipo Process compartido con el formulario (tipado TS)
 import { Process } from "./ProcessFrom";
 
-// Import de dnd-kit: contexto, sensores y evento de fin de drag
-import {
-    DndContext,
-    closestCenter,
-    PointerSensor,
-    useSensor,
-    useSensors,
-    DragEndEvent,
-} from "@dnd-kit/core";
-
-// Helpers de dnd-kit para listas ordenables
-import {
-    SortableContext,
-    useSortable,
-    verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-
-// Utilidad para convertir transform en string CSS
-import { CSS } from "@dnd-kit/utilities";
-
-// Definición de props que recibe el componente SimulationProcess
 interface SimulationProcessProps {
-    procesos: Process[]; // lista de procesos a mostrar
-    onEditar?: (p: Process) => void; // callback para editar un proceso
-    onSuspender?: (pid: string) => void; // callback cuando se suspende (opcional)
-    onReanudar?: (pid: string) => void; // callback para reanudar (no usado aquí)
-    onEliminar?: (pid: string) => void; // callback para eliminar proceso
-    onActualizar: (pid: string, cambios: Partial<Process>) => void; // actualizar campos parciales
-    onReorder?: (from: number, to: number) => void; // reordenar elementos (drag & drop)
+    procesos: Process[];
+    onEditar?: (p: Process) => void;
+    onSuspender?: (pid: string) => void;
+    onReanudar?: (pid: string) => void;
+    onEliminar?: (pid: string) => void;
+    onActualizar: (pid: string, cambios: Partial<Process>) => void;
+    onReorder?: (from: number, to: number) => void;
+    showRegistro?: boolean;
+    onCloseRegistro?: () => void;
+    onOpenRegistro?: () => void;
 }
 
-// Componente principal que renderiza la tabla de procesos y habilita DnD
 export default function SimulationProcess({
     procesos,
     onActualizar,
     onEditar,
     onEliminar,
     onSuspender,
-    onReorder,
+    showRegistro = false,
+    onCloseRegistro,
 }: SimulationProcessProps) {
-    // Crear sensores para dnd-kit: PointerSensor con distancia de activación 6px para evitar arrastres accidentales
-    const sensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+    const [internalRegistroOpen, setInternalRegistroOpen] = useState(false);
+    const registroOpen = showRegistro || internalRegistroOpen;
+
+
+    const terminated = useMemo(
+        () =>
+            procesos.filter(
+                (p) => p.estado === "terminado"
+            ),
+        [procesos]
     );
 
-    // Memoizar lista de ids (pids) para usar en SortableContext; se recalcula solo si `procesos` cambia
-    const ids = useMemo(() => procesos.map((p) => p.pid), [procesos]);
+    const executing = useMemo(
+        () =>
+            procesos.find(
+                (p) => p.estado === "ejecutando"
+            ) ?? null,
+        [procesos]
+    );
 
-    // Handler llamado cuando termina un drag; calcula índices y llama al callback onReorder
-    const handleDragEnd = (event: DragEndEvent) => {
-        const { active, over } = event; // elemento activo y elemento sobre el que se soltó
-        if (!over) return; // si no hay destino, no hacemos nada
-        if (active.id === over.id) return; // si se soltó en sí mismo, no hacemos nada
+    const suspended = useMemo(
+        () =>
+            procesos.filter(
+                (p) => p.estado === "suspendido"
+            ),
+        [procesos]
+    );
 
-        // localizar índices en el array `procesos` por pid
-        const fromIndex = procesos.findIndex(
-            (p) => p.pid === String(active.id)
-        );
-        const toIndex = procesos.findIndex((p) => p.pid === String(over.id));
-        if (fromIndex === -1 || toIndex === -1) return; // validación de seguridad
-        onReorder?.(fromIndex, toIndex); // invocar callback si existe
-    };
+    const ready = useMemo(
+        () =>
+            procesos.filter(
+                (p) => p.estado === "listo"
+            ),
+        [procesos]
+    );
 
-    // Estado local que guarda qué PID tiene el menú abierto (control padre de dropdowns)
-    const [menuAbierto, setMenuAbierto] = useState<string | null>(null);
+    const displayList = useMemo(() => {
+        const arr: Process[] = [];
+        if (executing) arr.push(executing);
+        arr.push(...ready);
+        arr.push(...suspended);
+        return arr;
+    }, [executing, ready, suspended]);
 
-    // Tipado de props que recibirá la fila sortable para mayor claridad
-    type SRProps = {
-        p: Process;
-        idx: number;
-        menuAbierto: string | null;
-        setMenuAbierto: (v: string | null) => void;
-        onActualizar: (pid: string, cambios: Partial<Process>) => void;
-        onEditar?: (p: Process) => void;
-        onEliminar?: (pid: string) => void;
-        onSuspender?: (pid: string) => void;
-    };
-
-    // Fila memoizada para reducir re-renders innecesarios
-    const SortableRow = memo(
-        function SortableRow({
+    const Row = memo(
+        function Row({
             p,
-            idx,
-            menuAbierto,
-            setMenuAbierto,
             onActualizar,
             onEditar,
             onEliminar,
             onSuspender,
-        }: SRProps) {
-            // useSortable devuelve referencias y transformaciones para el elemento arrastrable
-            const { setNodeRef, transform, transition, isDragging } =
-                useSortable({ id: p.pid });
-
-            // Estilo inline que aplica la transformación durante el drag
-            const style = {
-                transform: CSS.Transform.toString(transform),
-                transition,
-                zIndex: isDragging ? 999 : "auto",
-            } as React.CSSProperties;
-
-            // Flag para saber si el proceso está actualmente ejecutando (para resaltar la fila)
-            const isExecuting = p.estado === "ejecutando";
-            // Flag para saber si el menú de esta fila está abierto (controlado por el padre)
-            const isMenuOpen = menuAbierto === p.pid;
-
-            // Helper: muestra número si existe o '-' si es undefined/null
-            const showNum = (v: number | undefined | null) =>
+        }: {
+            p: Process;
+            onActualizar: (pid: string, cambios: Partial<Process>) => void;
+            onEditar?: (p: Process) => void;
+            onEliminar?: (pid: string) => void;
+            onSuspender?: (pid: string) => void;
+        }) {
+            const showNum = (v?: number | null) =>
                 typeof v === "number" ? v : "-";
 
-            // Helper para mostrar solo segundos: '12s' o '-' si no hay valor
-            const formatSeconds = (s?: number | null) => {
-                if (typeof s === "number") return `${s}s`;
-                return "-";
-            };
+            const tiempoEjecutado =
+                typeof p.iteracion === "number"
+                    ? p.iteracion
+                    : typeof p.tiempo_total === "number" &&
+                      typeof p.tiempo_restante === "number"
+                    ? Math.max(0, p.tiempo_total - p.tiempo_restante)
+                    : "-";
 
-            // JSX de la fila
             return (
                 <TableRow
-                    ref={setNodeRef as any} // enlace de la fila al dnd-kit
-                    style={style} // aplicar transform/transition
-                    className={isExecuting ? "bg-blue-50" : ""} // resaltar si está ejecutando
+                    className={p.estado === "ejecutando" ? "bg-blue-50" : ""}
                 >
-                    {/* Columna: posición en la cola (índice + 1 para humano) */}
-                    <TableCell className="w-12">
-                        <div className="flex items-center gap-2 mr-10">
-                            <span className="text-sm text-muted-foreground select-none">
-                                {idx + 1}
-                            </span>
-                        </div>
-                    </TableCell>
-                    
-                    {/* PID del proceso */}
-                    <TableCell>{p.pid}</TableCell>
-
-                    {/* Nombre del proceso */}
+                    <TableCell className="w-12">{p.pid}</TableCell>
                     <TableCell>{p.nombre}</TableCell>
-
-                    {/* Prioridad (o '-' si no existe) */}
-                    <TableCell>{showNum(p.prioridad)}</TableCell>
-
-                    {/* Interactividad (etiqueta) */}
                     <TableCell>{p.interactividad ?? "-"}</TableCell>
-
-                    {/* Tiempo total requerido por el proceso */}
+                    <TableCell>{showNum(p.quantum)}</TableCell>
                     <TableCell>{showNum(p.tiempo_total)}</TableCell>
-
-                    {/* Tiempo restante por ejecutar */}
                     <TableCell>{showNum(p.tiempo_restante)}</TableCell>
-
-                    {/* Iteración actual (contador de ticks/CPU consumido) */}
-                    <TableCell>{showNum(p.iteracion)}</TableCell>
-                    
-                    {/* Inicio (segundos) — formateado con formatSeconds */}
-                    <TableCell>{formatSeconds(p.t_inicio)}</TableCell>
-                    
-                    {/* Fin (segundos) — formateado con formatSeconds */}
-                    <TableCell>{formatSeconds(p.t_fin)}</TableCell>
-                    
-                    {/* Tiempo de espera (segundos) — formateado con formatSeconds */}
-                    <TableCell>{formatSeconds(p.tiempo_espera)}</TableCell>
-                    
-                    {/* Estado: texto coloreado según tipo */}
+                    <TableCell>{showNum(tiempoEjecutado as any)}</TableCell>
+                    <TableCell>{showNum(p.tiempo_espera)}</TableCell>
                     <TableCell>
                         <span
                             className={
@@ -216,45 +144,46 @@ export default function SimulationProcess({
                             {p.estado}
                         </span>
                     </TableCell>
-                    
-                    {/* Progreso visual como barra (ancho en %) */}
-                    <TableCell className="w-44">
+                    <TableCell className="w-36">
                         <div className="h-2 bg-muted rounded overflow-hidden">
                             <div
-                                style={{ width: `${p.progreso ?? 0}%` }}
+                                style={{
+                                    width: `${Math.max(
+                                        0,
+                                        Math.min(100, p.progreso ?? 0)
+                                    )}%`,
+                                }}
                                 className="h-full bg-primary"
                             />
                         </div>
                     </TableCell>
-                    
-                    {/* Columna de acciones: menú desplegable */}
+
                     <TableCell className="w-10">
                         <div className="flex justify-center">
-                            <DropdownMenu
-                                open={isMenuOpen} // control del estado abierto por el padre
-                                onOpenChange={(open) =>
-                                    setMenuAbierto(open ? p.pid : null)
-                                } // actualizar estado padre al abrir/cerrar
-                            >
+                            <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <div
-                                        // evitar que los eventos del trigger disparen el drag
-                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) =>
+                                            e.stopPropagation()
+                                        }
                                         onMouseDown={(e) => e.stopPropagation()}
-                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onTouchStart={(e) =>
+                                            e.stopPropagation()
+                                        }
                                     >
-                                        <Button variant="ghost" className="justify-center">
+                                        <Button
+                                            variant="ghost"
+                                            className="justify-center"
+                                        >
                                             <EllipsisVertical />
                                         </Button>
                                     </div>
                                 </DropdownMenuTrigger>
 
-                                {/* Contenido del menú con las acciones disponibles */}
                                 <DropdownMenuContent
                                     className="flex flex-col items-start gap-0.5"
                                     onPointerDown={(e) => e.stopPropagation()}
                                 >
-                                    {/* Marcar como 'listo' — deshabilitado si ya está listo o terminado */}
                                     <Button
                                         className="w-full justify-start"
                                         variant="ghost"
@@ -268,10 +197,10 @@ export default function SimulationProcess({
                                             })
                                         }
                                     >
-                                        <CheckLine className="mr-2 h-4 w-4" /> Listo
+                                        <CheckLine className="mr-2 h-4 w-4" />{" "}
+                                        Listo
                                     </Button>
 
-                                    {/* Suspender: cambia estado a suspendido y llama onSuspender */}
                                     <Button
                                         variant="ghost"
                                         className="w-full justify-start"
@@ -284,14 +213,15 @@ export default function SimulationProcess({
                                                 estado: "suspendido",
                                                 tiempo_cpu: 0,
                                                 resident: true,
+                                                interactividad: p.interactividad_inicial ?? p.interactividad,
                                             });
                                             onSuspender?.(p.pid);
                                         }}
                                     >
-                                        <Pause className="mr-2 h-4 w-4" /> Suspender
+                                        <Pause className="mr-2 h-4 w-4" />{" "}
+                                        Suspender
                                     </Button>
 
-                                    {/* Finalizar: marca como terminado y completa el progreso */}
                                     <Button
                                         className="w-full justify-start"
                                         variant="ghost"
@@ -301,13 +231,15 @@ export default function SimulationProcess({
                                                 progreso: 100,
                                                 tiempo_restante: 0,
                                                 tiempo_cpu: 0,
+                                                interactividad: 0,
+                                                t_fin: p.t_fin ?? 0,
                                             })
                                         }
                                     >
-                                        <XCircle className="mr-2 h-4 w-4" /> Finalizar
+                                        <XCircle className="mr-2 h-4 w-4" />{" "}
+                                        Finalizar
                                     </Button>
 
-                                    {/* Reiniciar: devuelve el proceso a su estado inicial listo para volver a ejecutar */}
                                     <Button
                                         className="w-full justify-start"
                                         variant="ghost"
@@ -321,13 +253,14 @@ export default function SimulationProcess({
                                                 t_inicio: null,
                                                 t_fin: null,
                                                 tiempo_espera: 0,
+                                                interactividad: p.interactividad_inicial ?? 0,
                                             })
                                         }
                                     >
-                                        <RotateCcw className="mr-2 h-4 w-4" /> Reiniciar
+                                        <RotateCcw className="mr-2 h-4 w-4" />{" "}
+                                        Reiniciar
                                     </Button>
 
-                                    {/* Editar: abre el formulario de edición (callback al padre) */}
                                     <Button
                                         variant="ghost"
                                         className="w-full justify-start"
@@ -336,13 +269,13 @@ export default function SimulationProcess({
                                         <Edit className="mr-2 h-4 w-4" /> Editar
                                     </Button>
 
-                                    {/* Eliminar: elimina el proceso (callback al padre) */}
                                     <Button
                                         variant="destructive"
                                         className="w-full justify-start"
                                         onClick={() => onEliminar?.(p.pid)}
                                     >
-                                        <Trash2 className="mr-2 h-4 w-4" /> Eliminar
+                                        <Trash2 className="mr-2 h-4 w-4" />{" "}
+                                        Eliminar
                                     </Button>
                                 </DropdownMenuContent>
                             </DropdownMenu>
@@ -351,68 +284,240 @@ export default function SimulationProcess({
                 </TableRow>
             );
         },
-        // Función de comparación para memo: evita re-render si las props clave no cambiaron
-        (prev, next) =>
-            prev.p === next.p &&
-            prev.idx === next.idx &&
-            prev.menuAbierto === next.menuAbierto
+        (prev, next) => {
+            const a = prev.p;
+            const b = next.p;
+            const same =
+                a.pid === b.pid &&
+                a.nombre === b.nombre &&
+                a.interactividad === b.interactividad &&
+                a.quantum === b.quantum &&
+                a.tiempo_total === b.tiempo_total &&
+                a.tiempo_restante === b.tiempo_restante &&
+                a.estado === b.estado &&
+                (typeof a.progreso === "number" ? a.progreso : 0) ===
+                    (typeof b.progreso === "number" ? b.progreso : 0);
+            return same;
+        }
     );
 
-    // Render del componente padre: tarjeta que contiene la tabla y el contexto DnD
     return (
-        <Card>
-            <CardContent>
-                <DndContext
-                    sensors={sensors} // sensores configurados arriba
-                    collisionDetection={closestCenter} // estrategia de colisión para drop
-                    onDragEnd={handleDragEnd} // manejar fin de drag
-                >
+        <>
+            <Card>
+                <CardContent>
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                {/* Cabeceras de la tabla (mismo orden que las celdas de la fila) */}
-                                <TableHead>Cola</TableHead>
                                 <TableHead>PID</TableHead>
                                 <TableHead>Nombre</TableHead>
-                                <TableHead>Prioridad</TableHead>
                                 <TableHead>Interactividad</TableHead>
-                                <TableHead>Tiempo Total</TableHead>
-                                <TableHead>Tiempo Restante</TableHead>
-                                <TableHead>Iteración</TableHead>
-                                <TableHead>Inicio</TableHead>
-                                <TableHead>Fin</TableHead>
-                                <TableHead>Espera</TableHead>
+                                <TableHead>Quantum</TableHead>
+                                <TableHead>Tiempo total</TableHead>
+                                <TableHead>Tiempo restante</TableHead>
+                                <TableHead>Iteraciones</TableHead>
+                                <TableHead>Espera (s)</TableHead>
                                 <TableHead>Estado</TableHead>
-                                <TableHead>Progreso</TableHead>
+                                <TableHead>Avance</TableHead>
                                 <TableHead>Acciones</TableHead>
                             </TableRow>
                         </TableHeader>
 
-                        {/* Contexto sortable: lista de ids y estrategia de ordenamiento vertical */}
-                        <SortableContext
-                            items={ids}
-                            strategy={verticalListSortingStrategy}
-                        >
-                            <TableBody>
-                                {/* Renderizar cada proceso como una fila SortableRow memoizada */}
-                                {procesos.map((p, idx) => (
-                                    <SortableRow
-                                        key={p.pid}
-                                        p={p}
-                                        idx={idx}
-                                        menuAbierto={menuAbierto}
-                                        setMenuAbierto={setMenuAbierto}
-                                        onActualizar={onActualizar}
-                                        onEditar={onEditar}
-                                        onEliminar={onEliminar}
-                                        onSuspender={onSuspender}
-                                    />
-                                ))}
-                            </TableBody>
-                        </SortableContext>
+                        <TableBody>
+                            {displayList.map((p) => (
+                                <Row
+                                    key={p.pid}
+                                    p={p}
+                                    onActualizar={onActualizar}
+                                    onEditar={onEditar}
+                                    onEliminar={onEliminar}
+                                    onSuspender={onSuspender}
+                                />
+                            ))}
+                        </TableBody>
                     </Table>
-                </DndContext>
-            </CardContent>
-        </Card>
+                </CardContent>
+            </Card>
+
+            {(registroOpen || terminated.length > 0) && (
+                <div
+                    className={`fixed inset-0 z-40 flex items-center justify-center p-6 ${
+                        registroOpen ? "block" : "hidden"
+                    }`}
+                >
+                    <div
+                        className="absolute inset-0 bg-black/40"
+                        onClick={() => {
+                            if (onCloseRegistro) onCloseRegistro();
+                            else setInternalRegistroOpen(false);
+                        }}
+                    />
+
+                    <div className="relative z-50 w-full max-w-5xl bg-background rounded-lg shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+                        <div className="p-6 border-b flex items-center justify-between bg-gradient-to-r from-primary/10 to-primary/5">
+                            <div>
+                                <h3 className="text-xl font-bold text-foreground">
+                                    Registro de Procesos Terminados
+                                </h3>
+                                <p className="text-sm text-muted-foreground mt-1">
+                                    Historial completo de ejecución
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="px-3 py-1.5 bg-primary/10 rounded-full">
+                                    <span className="text-sm font-semibold text-primary">
+                                        {terminated.length} {terminated.length === 1 ? 'proceso' : 'procesos'}
+                                    </span>
+                                </div>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                        if (onCloseRegistro) onCloseRegistro();
+                                        else setInternalRegistroOpen(false);
+                                    }}
+                                >
+                                    <X className="h-5 w-5" />
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="p-6 overflow-auto flex-1">
+                            {terminated.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <p className="text-muted-foreground text-lg">
+                                        No hay procesos terminados aún
+                                    </p>
+                                </div>
+                            ) : (
+                                <Table>
+                                    <TableHeader>
+                                        <TableRow className="hover:bg-transparent">
+                                            <TableHead className="font-semibold">PID</TableHead>
+                                            <TableHead className="font-semibold">Nombre</TableHead>
+                                            <TableHead className="font-semibold">Interactividad</TableHead>
+                                            <TableHead className="font-semibold">Quantum</TableHead>
+                                            <TableHead className="font-semibold">T. Total</TableHead>
+                                            <TableHead className="font-semibold">Iteraciones</TableHead>
+                                            <TableHead className="font-semibold">Espera (s)</TableHead>
+                                            <TableHead className="font-semibold">T. Inicio (s)</TableHead>
+                                            <TableHead className="font-semibold">T. Final (s)</TableHead>
+                                            <TableHead className="font-semibold">Duración (s)</TableHead>
+                                            <TableHead className="font-semibold text-center">Acciones</TableHead>
+                                        </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                        {terminated.map((p) => {
+                                            // T. Inicio: cuando empezó su primera iteración
+                                            const tInicio = typeof p.t_inicio === "number" ? p.t_inicio : 0;
+                                            
+                                            // T. Final: cuando terminó (tick en que se completó)
+                                            const tFinal = typeof p.t_fin === "number" ? p.t_fin : 0;
+                                            
+                                            // Duración: tiempo total desde el inicio de la simulación hasta que terminó
+                                            const duracion = tFinal + tInicio;
+                                            
+                                            // Iteraciones ejecutadas
+                                            const iteraciones = typeof p.iteracion === "number" ? p.iteracion : 0;
+
+                                            return (
+                                                <TableRow key={p.pid} className="hover:bg-muted/50">
+                                                    <TableCell className="font-medium">{p.pid}</TableCell>
+                                                    <TableCell>{p.nombre}</TableCell>
+                                                    <TableCell>{p.interactividad_inicial ?? "-"}</TableCell>
+                                                    <TableCell>{p.quantum ?? "-"}</TableCell>
+                                                    <TableCell>{p.tiempo_total ?? "-"}</TableCell>
+                                                    <TableCell>{iteraciones}</TableCell>
+                                                    <TableCell>{p.tiempo_espera ?? "-"}</TableCell>
+                                                    <TableCell>
+                                                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+                                                            {tInicio}s
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                                            {tFinal}s
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <span className="font-semibold text-primary">
+                                                            {duracion}s
+                                                        </span>
+                                                    </TableCell>
+                                                    <TableCell>
+                                                        <div className="flex justify-center">
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <div
+                                                                        onPointerDown={(e) => e.stopPropagation()}
+                                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                                        onTouchStart={(e) => e.stopPropagation()}
+                                                                    >
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="icon"
+                                                                            className="h-8 w-8"
+                                                                        >
+                                                                            <EllipsisVertical className="h-4 w-4" />
+                                                                        </Button>
+                                                                    </div>
+                                                                </DropdownMenuTrigger>
+
+                                                                <DropdownMenuContent
+                                                                    className="flex flex-col items-start gap-0.5"
+                                                                    onPointerDown={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <Button
+                                                                        className="w-full justify-start"
+                                                                        variant="ghost"
+                                                                        onClick={() =>
+                                                                            onActualizar(p.pid, {
+                                                                                tiempo_restante: p.tiempo_total,
+                                                                                progreso: 0,
+                                                                                iteracion: 0,
+                                                                                estado: "listo",
+                                                                                tiempo_cpu: 0,
+                                                                                t_inicio: null,
+                                                                                t_fin: null,
+                                                                                tiempo_espera: 0,
+                                                                                interactividad: p.interactividad_inicial ?? 0,
+                                                                            })
+                                                                        }
+                                                                    >
+                                                                        <RotateCcw className="mr-2 h-4 w-4" />
+                                                                        Reiniciar
+                                                                    </Button>
+
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        className="w-full justify-start text-muted-foreground"
+                                                                        onClick={() => onEditar?.(p)}
+                                                                    >
+                                                                        <Edit className="mr-2 h-4 w-4" />
+                                                                        Ver detalles
+                                                                    </Button>
+
+                                                                    <Button
+                                                                        variant="destructive"
+                                                                        className="w-full justify-start"
+                                                                        onClick={() => onEliminar?.(p.pid)}
+                                                                    >
+                                                                        <Trash2 className="mr-2 h-4 w-4" />
+                                                                        Eliminar
+                                                                    </Button>
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            );
+                                        })}
+                                    </TableBody>
+                                </Table>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }

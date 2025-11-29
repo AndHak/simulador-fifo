@@ -115,10 +115,6 @@ export default function ProcessMonitor() {
         // asegurar pid y nombre como strings legibles
         const pid = String(p.pid ?? Date.now()); // fallback a timestamp si no hay pid
         const nombre = p.nombre ?? `proc-${pid}`; // fallback a proc-<pid> si no hay nombre
-
-        // prioridad numérica (fallback 1)
-        const prioridad = toNumber(p.prioridad) ?? 1;
-
         // --- TIEMPOS ---
         // tomar tiempo_total preferido desde p.tiempo_total; si no existe, usar tiempo_cpu heurístico; si no, default 10
         const ttFromProceso = toNumber((p as any).tiempo_total);
@@ -129,8 +125,9 @@ export default function ProcessMonitor() {
         const trFromProceso = toNumber((p as any).tiempo_restante);
         const tiempo_restante = typeof trFromProceso === "number" ? trFromProceso : tiempo_total;
 
-        // quantum: para FIFO dejamos 0 — no se usa como quantum dinámico
-        const quantum = 0;
+        // quantum: ahora representa ROTACIONES.
+        // Heurística: tiempo_total / 3, mínimo 3.
+        const quantum = Math.max(3, Math.floor(tiempo_total / 3));
 
         // iteracion: normalizar iteraciones -> iteracion
         const iteracion = toNumber((p as any).iteraciones) ?? toNumber((p as any).iteracion) ?? 0;
@@ -156,14 +153,14 @@ export default function ProcessMonitor() {
             progreso = 0;
         }
 
-        // interactividad: mantener si viene, si no default "media"
-        const interactividad = (p.interactividad ?? "media") as Process["interactividad"];
+        // interactividad: mantener si viene, si no default "media" (2), clamp 0-3
+        let interactividad = toNumber(p.interactividad) ?? 2;
+        interactividad = Math.max(0, Math.min(3, interactividad));
 
         // devolver el Partial<Process> listo para pasar al simulador
         return {
             pid,
             nombre,
-            prioridad,
             tiempo_total,
             tiempo_restante,
             quantum,
@@ -172,6 +169,7 @@ export default function ProcessMonitor() {
             progreso,
             tiempo_cpu,
             interactividad,
+            interactividad_inicial: interactividad, // Set initial interactivity
         };
     }
 
@@ -232,7 +230,6 @@ export default function ProcessMonitor() {
                                 <TableHead>PID</TableHead>
                                 <TableHead>Nombre</TableHead>
                                 <TableHead>Prioridad</TableHead>
-                                <TableHead>Interactividad</TableHead>
                                 <TableHead>Tiempo Total</TableHead>
                                 <TableHead>Tiempo Restante</TableHead>
                                 <TableHead>Iteración</TableHead>
@@ -251,9 +248,6 @@ export default function ProcessMonitor() {
 
                                     {/* Nombre */}
                                     <TableCell className="min-w-[200px]">{p.nombre}</TableCell>
-
-                                    {/* Prioridad (si no existe mostrar '-') */}
-                                    <TableCell>{typeof p.prioridad === "number" ? p.prioridad : "-"}</TableCell>
 
                                     {/* Interactividad */}
                                     <TableCell>{p.interactividad ?? "-"}</TableCell>

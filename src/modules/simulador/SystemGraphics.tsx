@@ -96,9 +96,9 @@ export default function SystemGraphics({ procesos }: SystemGraphicsProps) {
     const sum = procesos.reduce((acc, p) => {
       const base = 8; // base nominal por proceso (MB abstractos)
       const iterBonus = (p.iteracion ?? 0) * 0.4; // bonus por iteraciones
-      const priorityBonus = p.prioridad <= 2 ? 6 : p.prioridad <= 4 ? 3 : 0; // procesos muy prioritarios consumen más
+      const priorityBonus = p.interactividad
       const factor = ramFactorFor(p); // factor según estado
-      return acc + (base + iterBonus + priorityBonus) * factor; // aportación por proceso
+      return acc + (base + iterBonus + priorityBonus) as any * factor; // aportación por proceso
     }, 0);
 
     // normalizar: dividir por un estimador (procesos.length * 20) y llevar a porcentaje 0..100
@@ -109,7 +109,7 @@ export default function SystemGraphics({ procesos }: SystemGraphicsProps) {
   const ramData = useMemo(() => {
     if (!procesos?.length) return [{ time: "T0", ram: 0 }];
     return procesos.map((p, i) => {
-      const base = 8 + (p.iteracion ?? 0) * 0.4 + (p.prioridad <= 2 ? 6 : p.prioridad <= 4 ? 3 : 0);
+      const base = p.interactividad as any;
       const factor = ramFactorFor(p);
       // cada punto T{i} contiene un valor ram clamped a 100
       return { time: `T${i + 1}`, ram: Math.min(100, Math.round(base * factor)) };
