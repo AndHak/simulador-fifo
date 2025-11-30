@@ -3,7 +3,7 @@ import { MainContent } from "@/layouts/content/main-content"
 import { WindowMenu } from "@/layouts/window-menu/window-menu"
 import { Button } from "@/shared/components/ui/button"
 import { useNavigate, useLocation } from "react-router-dom"
-import { RefreshCcw, Cpu, Activity } from "lucide-react"
+import { RefreshCcw, Cpu, Activity, BadgeInfo } from "lucide-react"
 import { ToastContainer } from "react-toastify"
 
 export default function App() {
@@ -13,6 +13,7 @@ export default function App() {
   const navItems = [
     { path: "/monitor", label: "Monitor", icon: <Activity className="w-4 h-4 mr-2" /> },
     { path: "/simulador", label: "Simulador", icon: <Cpu className="w-4 h-4 mr-2" /> },
+    { path: "/about", label: "Acerca De", icon: <BadgeInfo className="w-4 h-4 mr-2" /> }
   ]
 
   return (
