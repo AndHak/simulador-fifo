@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback, useRef } from "react"; // React hooks: efectos, estado, callback y refs
-import { invoke } from "@tauri-apps/api/core"; // invoke para llamar comandos Tauri
-import { useNavigate } from "react-router-dom"; // navegar entre rutas
+import { useEffect, useState, useCallback, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useNavigate } from "react-router-dom";
 
-import { Card, CardContent } from "@/shared/components/ui/card"; // UI: tarjeta
-import { Progress } from "@/shared/components/ui/progress"; // UI: barra de progreso
+import { Card, CardContent, CardHeader, CardTitle } from "@/shared/components/ui/card";
+import { Progress } from "@/shared/components/ui/progress";
 import {
     Table,
     TableBody,
@@ -11,139 +11,115 @@ import {
     TableHead,
     TableHeader,
     TableRow,
-} from "@/shared/components/ui/table"; // UI: tabla y subcomponentes
-import { Button } from "@/shared/components/ui/button"; // UI: botón
-import {
-    BarChart,
-    Bar,
-    XAxis,
-    YAxis,
-    Tooltip as ChartTooltip,
-    CartesianGrid,
-    ResponsiveContainer,
-} from "recharts"; // Recharts para gráficos
+} from "@/shared/components/ui/table";
+import { Button } from "@/shared/components/ui/button";
 import {
     DropdownMenu,
     DropdownMenuTrigger,
     DropdownMenuContent,
-} from "@/shared/components/ui/dropdown-menu"; // UI: dropdown
-import { EllipsisVertical } from "lucide-react"; // icono de tres puntos
+    DropdownMenuItem,
+} from "@/shared/components/ui/dropdown-menu";
+import { 
+    EllipsisVertical, 
+    Cpu, 
+    MemoryStick, 
+    Server, 
+    PlayCircle, 
+    RefreshCw 
+} from "lucide-react";
 
-import type { Proceso } from "@/shared/types/types"; // tipo del backend
-import type { Process } from "../simulador/ProcessFrom"; // tipo para el simulador
+import type { Proceso } from "@/shared/types/types";
+import type { Process } from "../simulador/ProcessFrom";
+import { cn } from "@/shared/lib/utils";
 
-const PAGE_SIZE = 20; // tamaño de página para paginación
+const PAGE_SIZE = 10;
+
+interface SystemInfo {
+    total_memory: number;
+    used_memory: number;
+    total_swap: number;
+    used_swap: number;
+}
 
 export default function ProcessMonitor() {
-    // estados principales del componente
-    const [procesosReales, setProcesosReales] = useState<Proceso[]>([]); // lista de procesos tal como los entrega Tauri
-    const [loading, setLoading] = useState(false); // indicador de carga
-    const [error, setError] = useState<string | null>(null); // mensaje de error (si hay)
-    const [page, setPage] = useState(1); // página actual de la paginación
+    const [procesosReales, setProcesosReales] = useState<Proceso[]>([]);
+    const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [page, setPage] = useState(1);
 
-    // refs para manejar scroll/contendor
-    const containerRef = useRef<HTMLDivElement | null>(null); // referencia al contenedor principal
-    const savedScrollRef = useRef<number>(0); // almacenar scrollTop antes de refrescar para restaurarlo
-    const navigate = useNavigate(); // hook para navegar a la ruta del simulador
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const savedScrollRef = useRef<number>(0);
+    const navigate = useNavigate();
 
-    // ----------------------
-    // fetch desde Tauri
-    // ----------------------
     const fetchProcesos = useCallback(async () => {
         try {
-            // guardar scroll actual antes de actualizar (evita salto visible)
             if (containerRef.current) savedScrollRef.current = containerRef.current.scrollTop;
-            console.log("Se ha refrescado"); // log informativo
+            
+            setLoading(true);
+            setError(null);
+            
+            // Fetch both processes and system info in parallel
+            const [procesosData, infoData] = await Promise.all([
+                invoke<Proceso[]>("obtener_procesos"),
+                invoke<SystemInfo>("obtener_info_sistema")
+            ]);
 
-            setLoading(true); // empezar loading
-            setError(null); // limpiar error previo
-            const data = await invoke<Proceso[]>("obtener_procesos"); // llamar comando Tauri
-            if (!Array.isArray(data)) {
-                // si la respuesta no es un array, tratar como error
-                console.error("Respuesta inválida de obtener_procesos", data);
+            if (!Array.isArray(procesosData)) {
+                console.error("Respuesta inválida de obtener_procesos", procesosData);
                 setProcesosReales([]);
                 setError("Respuesta inválida del backend");
                 return;
             }
-            setProcesosReales(data); // actualizar estado con los procesos reales
+            setProcesosReales(procesosData);
+            setSystemInfo(infoData);
+
         } catch (err) {
-            // manejo de errores en invoke
             console.error("invoke error", err);
-            setProcesosReales([]);
+            // Don't clear processes if just a transient error, but here we set empty for safety
+            // setProcesosReales([]); 
             setError(String(err ?? "Error desconocido"));
         } finally {
-            setLoading(false); // terminar loading
-            // restaurar scroll en el siguiente frame para evitar jump visual
+            setLoading(false);
             requestAnimationFrame(() => {
                 if (containerRef.current) {
                     containerRef.current.scrollTop = savedScrollRef.current;
                 }
             });
         }
-    }, []); // dependencias vacías: la función es estable
+    }, []);
 
-    // al montar, hacer la primera carga y luego refrescar cada 10s
     useEffect(() => {
         fetchProcesos();
-        const intervalo = setInterval(fetchProcesos, 10000);
+        const intervalo = setInterval(fetchProcesos, 5000); // Refresh every 5s for better responsiveness
         return () => clearInterval(intervalo);
     }, [fetchProcesos]);
 
-    // ----------------------
-    // util: convertir valores a número o undefined
-    // ----------------------
     const toNumber = (v: any): number | undefined => {
-        if (v == null) return undefined; // null/undefined -> undefined
-        const n = Number(v); // intentar convertir
-        return Number.isFinite(n) ? n : undefined; // solo números finitos válidos
+        if (v == null) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
     };
 
-    /**
-     * mapToSimulator
-     * - Normaliza/convierte un `Proceso` real a un `Partial<Process>` que entiende el simulador.
-     * - Reglas:
-     *   * pid y nombre se normalizan a string/placeholder.
-     *   * prioridad: usar p.prioridad si viene, si no -> 1.
-     *   * tiempo_total: preferir p.tiempo_total; si no existe, usar tiempo_cpu redondeado; si tampoco, valor por defecto 10.
-     *   * tiempo_restante: preferir p.tiempo_restante; si no existe, igualar a tiempo_total.
-     *   * quantum: en FIFO dejamos 0 (o lo que decidas).
-     *   * iteracion: normalizar iteraciones/iteracion.
-     *   * tiempo_cpu: usar p.tiempo_cpu si viene.
-     *   * progreso: calcular de forma sencilla y segura a partir de tiempo_total/tiempo_restante; fallback a p.avance si existe.
-     */
     function mapToSimulator(p: Proceso): Partial<Process> {
-        // asegurar pid y nombre como strings legibles
-        const pid = String(p.pid ?? Date.now()); // fallback a timestamp si no hay pid
-        const nombre = p.nombre ?? `proc-${pid}`; // fallback a proc-<pid> si no hay nombre
-        // --- TIEMPOS ---
-        // tomar tiempo_total preferido desde p.tiempo_total; si no existe, usar tiempo_cpu heurístico; si no, default 10
+        const pid = String(p.pid ?? Date.now());
+        const nombre = p.nombre ?? `proc-${pid}`;
+        
         const ttFromProceso = toNumber((p as any).tiempo_total);
         const tiempoCpuNum = toNumber(p.tiempo_cpu);
         const tiempo_total = ttFromProceso ?? (typeof tiempoCpuNum === "number" && tiempoCpuNum > 0 ? Math.max(5, Math.round(tiempoCpuNum)) : 10);
 
-        // tiempo_restante: preferir campo real, si no usar tiempo_total (proceso no ha avanzado aún)
         const trFromProceso = toNumber((p as any).tiempo_restante);
         const tiempo_restante = typeof trFromProceso === "number" ? trFromProceso : tiempo_total;
 
-        // quantum: ahora representa ROTACIONES.
-        // Heurística: tiempo_total / 3, mínimo 3.
         const quantum = Math.max(3, Math.floor(tiempo_total / 3));
-
-        // iteracion: normalizar iteraciones -> iteracion
         const iteracion = toNumber((p as any).iteraciones) ?? toNumber((p as any).iteracion) ?? 0;
-
-        // tiempo_cpu: usar el valor proveniente del proceso (fallback 0)
         const tiempo_cpu = tiempoCpuNum ?? 0;
 
-        // --- PROGRESO: cálculo simple basado en tiempo_total y tiempo_restante ---
-        // convertir a Number seguros
+        let progreso: number;
         const tt = Number(tiempo_total);
         const tr = Number(tiempo_restante);
 
-        // si p.avance explícito es número, lo preferimos (pero lo clamp a 0..100)
-        // sino si tenemos tt > 0 calculamos ((tt - tr) / tt) * 100
-        // finalmente fallback 0
-        let progreso: number;
         if (typeof p.avance === "number" && !Number.isNaN(p.avance)) {
             progreso = Math.round(Math.max(0, Math.min(100, p.avance)));
         } else if (Number.isFinite(tt) && tt > 0 && Number.isFinite(tr)) {
@@ -153,11 +129,9 @@ export default function ProcessMonitor() {
             progreso = 0;
         }
 
-        // interactividad: mantener si viene, si no default "media" (2), clamp 0-3
         let interactividad = toNumber(p.interactividad) ?? 2;
         interactividad = Math.max(0, Math.min(3, interactividad));
 
-        // devolver el Partial<Process> listo para pasar al simulador
         return {
             pid,
             nombre,
@@ -165,199 +139,224 @@ export default function ProcessMonitor() {
             tiempo_restante,
             quantum,
             iteracion,
-            estado: "listo", // al crear desde monitor, lo abrimos como listo
+            estado: "listo",
             progreso,
             tiempo_cpu,
             interactividad,
-            interactividad_inicial: interactividad, // Set initial interactivity
+            interactividad_inicial: interactividad,
         };
     }
 
-    // abrir simulador con el proceso simulado (navegar pasando state)
     const simularProceso = (p: Proceso) => {
         const simulated = mapToSimulator(p);
         navigate("/simulador", { state: { simulatedProcess: simulated } });
     };
 
-    // datos para la gráfica: top 10 por tiempo_cpu
-    const chartData = procesosReales
-        .slice()
-        .sort((a, b) => (Number(b.tiempo_cpu ?? 0) - Number(a.tiempo_cpu ?? 0)))
-        .slice(0, 10)
-        .map((p) => ({
-            nombre: p.nombre ?? `PID ${p.pid}`,
-            tiempo_cpu: Number(p.tiempo_cpu ?? 0),
-        }));
+    // --- Statistics ---
+    const totalProcesos = procesosReales.length;
+    const avgCpu = totalProcesos > 0 
+        ? procesosReales.reduce((acc, p) => acc + (toNumber(p.tiempo_cpu) ?? 0), 0) / totalProcesos 
+        : 0;
+    
+    // Memory calculation from SystemInfo
+    const usedMemGB = systemInfo ? systemInfo.used_memory / 1024 / 1024 : 0;
+    const totalMemGB = systemInfo ? systemInfo.total_memory / 1024 / 1024 : 0;
+    const memPercentage = totalMemGB > 0 ? (usedMemGB / totalMemGB) * 100 : 0;
 
-    // paginación básica
+    // --- Pagination ---
     const totalPages = Math.max(1, Math.ceil(procesosReales.length / PAGE_SIZE));
     const pageData = procesosReales.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-    // si la página actual queda fuera de rango, ajustarla
     useEffect(() => {
         if (page > totalPages) setPage(totalPages);
     }, [totalPages, page]);
 
-    // ----------------------
-    // RENDER
-    // ----------------------
     return (
-        <div className="p-6 grid gap-6" ref={containerRef}>
-            {/* cabecera: título y controles */}
+        <div className="p-6 space-y-6 animate-in fade-in duration-500" ref={containerRef}>
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold">Monitor de Procesos</h1>
-
-                <div className="flex gap-2 items-center">
-                    {/* botón manual para refrescar (usa fetchProcesos) */}
-                    <Button onClick={() => fetchProcesos()}>
-                        {loading ? "Refrescando..." : "Refrescar"}
-                    </Button>
-                    <div className="text-sm text-muted-foreground">
-                        Total procesos: {procesosReales.length}
-                    </div>
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">Monitor de Sistema</h1>
+                    <p className="text-muted-foreground">Vista en tiempo real de los procesos del sistema.</p>
                 </div>
+                <Button onClick={() => fetchProcesos()} variant="outline" className="gap-2">
+                    <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                    Refrescar
+                </Button>
             </div>
 
-            {/* mostrar error si existe */}
-            {error && <div className="text-sm text-destructive">Error: {error}</div>}
+            {/* Dashboard Cards */}
+            <div className="grid gap-4 md:grid-cols-3">
+                <Card className="bg-card/50 backdrop-blur border-primary/10 shadow-sm">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Total Procesos</CardTitle>
+                        <Server className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{totalProcesos}</div>
+                        <p className="text-xs text-muted-foreground">Procesos detectados por el sistema</p>
+                    </CardContent>
+                </Card>
+                <Card className="bg-card/50 backdrop-blur border-primary/10 shadow-sm">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Uso CPU Promedio</CardTitle>
+                        <Cpu className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">{avgCpu.toFixed(1)}%</div>
+                        <Progress value={Math.min(100, avgCpu)} className="h-2 mt-2" />
+                    </CardContent>
+                </Card>
+                <Card className="bg-card/50 backdrop-blur border-primary/10 shadow-sm">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Uso de Memoria</CardTitle>
+                        <MemoryStick className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold">
+                            {usedMemGB.toFixed(1)} / {totalMemGB.toFixed(1)} MB
+                        </div>
+                        <Progress value={Math.min(100, memPercentage)} className="h-2 mt-2" />
+                        <p className="text-xs text-muted-foreground mt-1">
+                            {memPercentage.toFixed(1)}% utilizado
+                        </p>
+                    </CardContent>
+                </Card>
+            </div>
 
-            {/* tabla principal con la lista (paginada) */}
-            <Card>
-                <CardContent className="overflow-x-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>PID</TableHead>
-                                <TableHead>Nombre</TableHead>
-                                <TableHead>Prioridad</TableHead>
-                                <TableHead>Tiempo Total</TableHead>
-                                <TableHead>Tiempo Restante</TableHead>
-                                <TableHead>Iteración</TableHead>
-                                <TableHead>Tiempo CPU (%)</TableHead>
-                                <TableHead>Estado</TableHead>
-                                <TableHead style={{ width: 240 }}>% Avance</TableHead>
-                                <TableHead className="text-center">Acciones</TableHead>
-                            </TableRow>
-                        </TableHeader>
+            {error && (
+                <div className="p-4 rounded-md bg-destructive/10 text-destructive text-sm font-medium">
+                    Error: {error}
+                </div>
+            )}
 
-                        <TableBody>
-                            {pageData.map((p) => (
-                                <TableRow key={p.pid}>
-                                    {/* PID */}
-                                    <TableCell className="min-w-[80px]">{p.pid}</TableCell>
-
-                                    {/* Nombre */}
-                                    <TableCell className="min-w-[200px]">{p.nombre}</TableCell>
-
-                                    {/* Interactividad */}
-                                    <TableCell>{p.interactividad ?? "-"}</TableCell>
-
-                                    {/* Tiempo total: preferir p.tiempo_total, si no mostrar p.tiempo_cpu redondeado, si no '-' */}
-                                    <TableCell>
-                                        {typeof (p as any).tiempo_total === "number"
-                                            ? (p as any).tiempo_total
-                                            : typeof p.tiempo_cpu === "number"
-                                                ? Math.round(p.tiempo_cpu)
-                                                : "-"}
-                                    </TableCell>
-
-                                    {/* Tiempo restante: mostrar si existe, si no '-' */}
-                                    <TableCell>
-                                        {typeof (p as any).tiempo_restante === "number"
-                                            ? (p as any).tiempo_restante
-                                            : "-"}
-                                    </TableCell>
-
-                                    {/* Iteración */}
-                                    <TableCell>
-                                        {typeof (p as any).iteraciones === "number"
-                                            ? (p as any).iteraciones
-                                            : (p as any).iteracion ?? "-"}
-                                    </TableCell>
-
-                                    {/* Tiempo CPU (numérico con 2 decimales) */}
-                                    <TableCell>{(Number(p.tiempo_cpu ?? 0)).toFixed(2)}</TableCell>
-
-                                    {/* Estado */}
-                                    <TableCell>{p.estado ?? "-"}</TableCell>
-
-                                    {/* Progreso: usar p.avance si lo trae el proceso (en el monitor),
-                                        redondeado para la barra y el texto */}
-                                    <TableCell>
-                                        <div className="w-full flex items-center gap-2">
-                                            <div className="flex-1">
-                                                <Progress value={Math.round((p.avance ?? 0) as number)} />
-                                            </div>
-                                            <div className="w-12 text-right text-sm">
-                                                {Math.round((p.avance ?? 0) as number)}%
-                                            </div>
-                                        </div>
-                                    </TableCell>
-
-                                    {/* Acciones: abrir simulación del proceso (manda a /simulador con estado) */}
-                                    <TableCell className="w-28">
-                                        <div className="flex items-center justify-center h-full">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" className="justify-center">
-                                                        <EllipsisVertical />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-
-                                                <DropdownMenuContent>
-                                                    <Button variant="ghost" onClick={() => simularProceso(p)}>
-                                                        Simulación de este proceso
-                                                    </Button>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </div>
-                                    </TableCell>
+            {/* Process Table */}
+            <Card className="border-primary/10 shadow-md overflow-hidden">
+                <CardHeader className="bg-muted/30 border-b border-border/50 py-4">
+                    <CardTitle className="text-lg font-medium flex items-center gap-2">
+                        <MemoryStick className="h-5 w-5 text-primary" />
+                        Tabla de Procesos
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                                    <TableHead className="w-[100px]">PID</TableHead>
+                                    <TableHead>Nombre</TableHead>
+                                    <TableHead className="text-center">Prioridad</TableHead>
+                                    <TableHead className="text-center">CPU (%)</TableHead>
+                                    <TableHead className="text-center">Estado</TableHead>
+                                    <TableHead className="w-[200px]">Progreso</TableHead>
+                                    <TableHead className="text-right">Acciones</TableHead>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-
-                    {/* Pagination controls simples */}
-                    <div className="flex items-center justify-between mt-4">
-                        <div className="text-sm text-muted-foreground">
-                            Página {page} / {totalPages}
-                        </div>
-                        <div className="flex gap-2">
-                            <Button variant="ghost" onClick={() => setPage(1)} disabled={page === 1}>{"<<"}</Button>
-                            <Button variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>Prev</Button>
-
-                            {/* botones de página (ventana parcial) */}
-                            {Array.from({ length: totalPages }, (_, i) => i + 1)
-                                .slice(Math.max(0, page - 3), Math.min(totalPages, page + 2))
-                                .map((n) => (
-                                    <Button key={n} variant={n === page ? "default" : "ghost"} onClick={() => setPage(n)}>
-                                        {n}
-                                    </Button>
-                                ))}
-
-                            <Button variant="ghost" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
-                            <Button variant="ghost" onClick={() => setPage(totalPages)} disabled={page === totalPages}>{">>"}</Button>
-                        </div>
+                            </TableHeader>
+                            <TableBody>
+                                {pageData.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                                            No se encontraron procesos.
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    pageData.map((p) => (
+                                        <TableRow key={p.pid} className="hover:bg-muted/30 transition-colors">
+                                            <TableCell className="font-mono font-medium text-xs">{p.pid}</TableCell>
+                                            <TableCell className="font-medium text-foreground/90 max-w-[200px] truncate" title={p.nombre}>
+                                                {p.nombre}
+                                            </TableCell>
+                                            <TableCell className="text-center">{p.interactividad ?? "-"}</TableCell>
+                                            <TableCell className="text-center font-mono">
+                                                {(Number(p.tiempo_cpu ?? 0)).toFixed(1)}%
+                                            </TableCell>
+                                            <TableCell className="text-center">
+                                                <span className={cn(
+                                                    "px-2 py-0.5 rounded-full text-[10px] uppercase font-bold tracking-wider",
+                                                    (p.estado === "Run" || p.estado === "Running") 
+                                                        ? "bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
+                                                        : "bg-slate-500/10 text-slate-500 border border-slate-500/20"
+                                                )}>
+                                                    {p.estado ?? "Unknown"}
+                                                </span>
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex items-center gap-2">
+                                                    <Progress value={Math.round((p.avance ?? 0) as number)} className="h-1.5" />
+                                                    <span className="text-[10px] text-muted-foreground w-8 text-right">
+                                                        {Math.round((p.avance ?? 0) as number)}%
+                                                    </span>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right">
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                            <EllipsisVertical className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuItem onClick={() => simularProceso(p)}>
+                                                            <PlayCircle className="mr-2 h-4 w-4" />
+                                                            Simular Proceso
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))
+                                )}
+                            </TableBody>
+                        </Table>
                     </div>
                 </CardContent>
-            </Card>
-
-            {/* Gráfica de distribución de uso de CPU (vertical) */}
-            <Card>
-                <CardContent>
-                    <h2 className="text-lg font-semibold mb-4">Distribución de Uso de CPU</h2>
-                    <div className="w-full h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 8 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--muted)" />
-                                <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
-                                <YAxis dataKey="nombre" type="category" width={180} />
-                                <ChartTooltip formatter={(value: any) => [`${Number(value).toFixed(2)}%`, "CPU"]} />
-                                <Bar dataKey="tiempo_cpu" fill="var(--primary)" radius={[4, 4, 4, 4]} />
-                            </BarChart>
-                        </ResponsiveContainer>
+                
+                {/* Pagination Footer */}
+                <div className="flex items-center justify-between px-4 py-4 border-t border-border/50 bg-muted/20">
+                    <div className="text-xs text-muted-foreground">
+                        Mostrando {pageData.length} de {totalProcesos} procesos
                     </div>
-                </CardContent>
+                    <div className="flex items-center gap-2">
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setPage(1)} 
+                            disabled={page === 1}
+                            className="h-8 w-8 p-0"
+                        >
+                            {"<<"}
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setPage(p => Math.max(1, p - 1))} 
+                            disabled={page === 1}
+                            className="h-8 w-8 p-0"
+                        >
+                            {"<"}
+                        </Button>
+                        <span className="text-xs font-medium min-w-[3rem] text-center">
+                            {page} / {totalPages}
+                        </span>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))} 
+                            disabled={page === totalPages}
+                            className="h-8 w-8 p-0"
+                        >
+                            {">"}
+                        </Button>
+                        <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => setPage(totalPages)} 
+                            disabled={page === totalPages}
+                            className="h-8 w-8 p-0"
+                        >
+                            {">>"}
+                        </Button>
+                    </div>
+                </div>
             </Card>
         </div>
     );

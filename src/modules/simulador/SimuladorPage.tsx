@@ -35,6 +35,19 @@ export default function SimuladorPage() {
     return [];
   });
 
+  const [registro, setRegistro] = useState<Process[]>(() => {
+    const saved = localStorage.getItem("registro_simulador");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        console.error("Error al parsear registro guardado");
+        return [];
+      }
+    }
+    return [];
+  });
+
   const [showRegistro, setShowRegistro] = useState(false);
   const [editing, setEditing] = useState<Process | null>(null);
   const [openSheet, setOpenSheet] = useState(false);
@@ -49,6 +62,23 @@ export default function SimuladorPage() {
       localStorage.setItem("procesos_simulador", JSON.stringify(procesos));
     } catch (err) {
       console.error("Error guardando procesos en localStorage", err);
+    }
+  }, [procesos]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("registro_simulador", JSON.stringify(registro));
+    } catch (err) {
+      console.error("Error guardando registro en localStorage", err);
+    }
+  }, [registro]);
+
+  // Mover procesos terminados al registro
+  useEffect(() => {
+    const terminados = procesos.filter((p) => p.estado === "terminado");
+    if (terminados.length > 0) {
+      setRegistro((prev) => [...prev, ...terminados]);
+      setProcesos((prev) => prev.filter((p) => p.estado !== "terminado"));
     }
   }, [procesos]);
 
@@ -342,18 +372,6 @@ export default function SimuladorPage() {
   useEffect(() => {
     if (!running) return;
     
-    const allTerminated = procesos.length > 0 && procesos.every(
-      (p) => p.estado === "terminado"
-    );
-    
-    if (allTerminated) {
-      setRunning(false);
-      toast.success("¡Simulación completada! Todos los procesos han terminado.", {
-        toastId: "simulation-completed",
-      });
-      return;
-    }
-    
     const interval = setInterval(() => simularPasoQuantum(), 1000);
     return () => clearInterval(interval);
   }, [running, procesos]);
@@ -438,6 +456,30 @@ export default function SimuladorPage() {
     confirmToastIdRef.current = id;
   };
 
+  // ---------- handleReiniciar ----------
+  const handleReiniciar = (p: Process) => {
+    const newProcess: Process = {
+      ...p,
+      estado: "listo",
+      tiempo_cpu: 0,
+      tiempo_restante: p.tiempo_total,
+      progreso: 0,
+      iteracion: 0,
+      t_inicio: null,
+      t_fin: null,
+      tiempo_espera: 0,
+      interactividad: p.interactividad_inicial ?? p.interactividad,
+      resident: true,
+    };
+    crearProceso(newProcess);
+  };
+
+  // ---------- handleLimpiarRegistro ----------
+  const handleLimpiarRegistro = () => {
+    setRegistro([]);
+    toast.success("Registro limpiado correctamente");
+  };
+
   // ---------- RENDER ----------
   return (
     <main className="p-6 space-y-6 relative">
@@ -500,6 +542,7 @@ export default function SimuladorPage() {
 
       <SimulationProcess
         procesos={procesos}
+        registro={registro}
         onEditar={(p) => setEditing(p)}
         onSuspender={(pid) =>
           actualizarProceso(pid, {
@@ -513,12 +556,13 @@ export default function SimuladorPage() {
         onEliminar={eliminarProcesoLocal}
         onActualizar={actualizarProceso}
         onReorder={reordenarProcesos}
+        onReiniciar={handleReiniciar}
+        onLimpiarRegistro={handleLimpiarRegistro}
         showRegistro={showRegistro}
         onCloseRegistro={() => setShowRegistro(false)}
-        onOpenRegistro={() => setShowRegistro(true)}
       />
 
-      <SystemGraphics procesos={procesos} />
+      <SystemGraphics procesos={procesos} registro={registro} />
 
       {editing && (
         <Sheet open={!!editing} onOpenChange={() => setEditing(null)}>

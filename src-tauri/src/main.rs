@@ -194,10 +194,31 @@ fn obtener_procesos() -> Result<Vec<Proceso>, String> {
     Ok(out)
 }
 
+// ----- Estructura para información del sistema -----
+#[derive(Serialize)]
+pub struct SystemInfo {
+    pub total_memory: u64,
+    pub used_memory: u64,
+    pub total_swap: u64,
+    pub used_swap: u64,
+}
+
+#[tauri::command]
+fn obtener_info_sistema() -> SystemInfo {
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+    SystemInfo {
+        total_memory: sys.total_memory(),
+        used_memory: sys.used_memory(),
+        total_swap: sys.total_swap(),
+        used_swap: sys.used_swap(),
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![obtener_procesos])
+        .invoke_handler(tauri::generate_handler![obtener_procesos, obtener_info_sistema])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
