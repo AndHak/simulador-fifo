@@ -43,7 +43,6 @@ export default function SimuladorPage() {
   const [theme, setTheme] = useState<"dark" | "light">("light");
 
   const location = useLocation();
-  const initialPidSelectionDoneRef = useRef<boolean>(false);
 
   useEffect(() => {
     try {
@@ -105,9 +104,6 @@ export default function SimuladorPage() {
         resident: bcp.resident ?? true,
       };
 
-      toast.success(`Proceso ${bcp.nombre} agregado correctamente`, {
-        toastId: `added-${bcp.pid}`,
-      });
       setOpenSheet(false);
       setInitialFromMonitor(null);
 
@@ -117,19 +113,7 @@ export default function SimuladorPage() {
 
   // ---------- handleQuickLaunch ----------
   const handleQuickLaunch = (processConfig: Process) => {
-    // Generar PID único
-    let newPid = 1;
-    const existingPids = new Set(procesos.map(p => Number(p.pid)).filter(n => !isNaN(n)));
-    while (existingPids.has(newPid)) {
-      newPid++;
-    }
-    
-    const newProcess = {
-      ...processConfig,
-      pid: String(newPid),
-    };
-    
-    crearProceso(newProcess);
+    crearProceso(processConfig);
   };
 
   // ---------- actualizarProceso ----------
@@ -141,7 +125,6 @@ export default function SimuladorPage() {
       const updated = { ...prevP, ...cambios };
 
       if (cambios.estado === "ejecutando") {
-        // Calcular tiempo actual de simulación
         const tiempoActual = prev.reduce((max, p) => {
           const tiempoProc = (p.iteracion ?? 0) + (p.tiempo_espera ?? 0);
           return Math.max(max, tiempoProc);
@@ -162,7 +145,6 @@ export default function SimuladorPage() {
 
       if (cambios.estado === "suspendido") {
         const copia = prev.filter((p) => p.pid !== pid);
-        // Al suspender manualmente, reseteamos el contador a su valor inicial
         copia.push({ 
           ...updated, 
           estado: "suspendido", 
@@ -191,41 +173,62 @@ export default function SimuladorPage() {
 
   // ---------- eliminarProceso ----------
   const eliminarProcesoLocal = (pid: string) => {
-    let existed = false;
-    setProcesos((prev) => {
-      if (prev.some((x) => x.pid === pid)) existed = true;
-      return prev.filter((x) => x.pid !== pid);
+    if (confirmToastIdRef.current !== null) return;
+
+    const ConfirmDelete = () => (
+      <div className="max-w-xs">
+        <div className="font-semibold mb-2">¿Eliminar proceso {pid}?</div>
+        <div className="flex gap-2 justify-end">
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              setProcesos((prev) => prev.filter((x) => x.pid !== pid));
+              if (confirmToastIdRef.current !== null) toast.dismiss(confirmToastIdRef.current);
+              confirmToastIdRef.current = null;
+              toast.info(`Proceso ${pid} eliminado`, { toastId: `deleted-${pid}` });
+            }}
+          >
+            Eliminar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (confirmToastIdRef.current !== null) toast.dismiss(confirmToastIdRef.current);
+              confirmToastIdRef.current = null;
+            }}
+          >
+            Cancelar
+          </Button>
+        </div>
+      </div>
+    );
+
+    const id = toast(<ConfirmDelete />, {
+      autoClose: false,
+      closeOnClick: false,
+      pauseOnHover: false,
+      icon: false,
     });
-    if (existed) {
-      toast.info(`Proceso ${pid} eliminado`, {
-        toastId: `deleted-${pid}`,
-      });
-    } else {
-      toast.warning(`Proceso ${pid} no encontrado`, {
-        toastId: `delete-notfound-${pid}`,
-      });
-    }
+    confirmToastIdRef.current = id;
   };
 
-  // ---------- simularPasoQuantum (VERSIÓN CORREGIDA) ----------
+  // ---------- simularPasoQuantum ----------
   const simularPasoQuantum = () => {
     setProcesos((prev) => {
       if (!prev.length) return prev;
 
       let copia = prev.map((p) => ({ ...p }));
       
-      // Obtener el tiempo actual de simulación (contar ticks transcurridos)
       const tiempoActual = copia.reduce((max, p) => {
         const tiempoProc = (p.iteracion ?? 0) + (p.tiempo_espera ?? 0);
         return Math.max(max, tiempoProc);
       }, 0);
 
-      // PASO 1: Manejo de Suspendidos (Countdown)
-      // Decrementar interactividad de TODOS los suspendidos
+      // PASO 1: Suspendidos
       copia = copia.map(p => {
         if (p.estado === "suspendido") {
-           // Si ya es 0 o menos, está listo para salir, pero lo movemos abajo
-           // Si es mayor a 0, decrementamos
            if (p.interactividad > 0) {
              return { ...p, interactividad: p.interactividad - 1 };
            }
@@ -233,14 +236,11 @@ export default function SimuladorPage() {
         return p;
       });
 
-      // Mover a Listo los que llegaron a 0
-      // Lo hacemos en un loop inverso o filter para manejar indices correctamente si borramos
-      // Pero mejor: identificar indices a mover
       const toReadyIndices = copia
         .map((p, i) => ({ p, i }))
         .filter(({ p }) => p.estado === "suspendido" && p.interactividad <= 0)
         .map(({ i }) => i)
-        .sort((a, b) => b - a); // Descendente para borrar sin afectar indices previos
+        .sort((a, b) => b - a);
 
       if (toReadyIndices.length > 0) {
         const movedProcesses: Process[] = [];
@@ -249,30 +249,17 @@ export default function SimuladorPage() {
           proc.estado = "listo";
           movedProcesses.push(proc);
         });
-        // Agregar al final de la cola
         copia.push(...movedProcesses);
       }
 
-      // PASO 2: Encontrar el proceso ejecutando
+      // PASO 2: Ejecutando
       let execIdx = copia.findIndex((p) => p.estado === "ejecutando");
 
-      // PASO 3: Si no hay ejecutando, seleccionar el primer listo (FIFO)
+      // PASO 3: FIFO si no hay ejecutando
       if (execIdx === -1) {
-        if (!initialPidSelectionDoneRef.current) {
-          // PRIMER inicio: escoger por PID más bajo
-          const readyForFirst = copia.filter((p) => p.estado === "listo");
-          if (readyForFirst.length === 0) return copia;
-          readyForFirst.sort(compareByPid);
-          const pidNext = readyForFirst[0].pid;
-          execIdx = copia.findIndex((p) => p.pid === pidNext);
-          initialPidSelectionDoneRef.current = true;
-        } else {
-          // FIFO: primer listo en la cola
-          execIdx = copia.findIndex((p) => p.estado === "listo");
-          if (execIdx === -1) return copia;
-        }
+        execIdx = copia.findIndex((p) => p.estado === "listo");
+        if (execIdx === -1) return copia;
 
-        // Marcar como ejecutando y guardar el tiempo de inicio (en segundos desde el inicio de la simulación)
         if (execIdx !== -1) {
           copia[execIdx] = {
             ...copia[execIdx],
@@ -286,69 +273,56 @@ export default function SimuladorPage() {
       const proc = execIdx !== -1 ? copia[execIdx] : null;
       if (!proc) return copia;
 
-      // PASO 4: Ejecutar 1 tick (1 segundo)
+      // PASO 4: Ejecutar
       proc.tiempo_cpu = (proc.tiempo_cpu ?? 0) + 1;
-      // NOTA: Ya no incrementamos iteracion aquí por cada tick
       
       const beforeRemaining = typeof proc.tiempo_restante === "number" ? proc.tiempo_restante : proc.tiempo_total ?? 0;
       proc.tiempo_restante = Math.max(0, beforeRemaining - 1);
 
-      // Actualizar progreso
       if (typeof proc.tiempo_total === "number" && proc.tiempo_total > 0) {
         proc.progreso = Math.round(((proc.tiempo_total - proc.tiempo_restante) / proc.tiempo_total) * 100);
       }
 
-      // PASO 5: Incrementar tiempo_espera de los listos y suspendidos
+      // PASO 5: Tiempo espera
       copia = copia.map((p, idx) =>
         idx !== execIdx && (p.estado === "listo" || p.estado === "suspendido")
           ? { ...p, tiempo_espera: (p.tiempo_espera ?? 0) + 1 }
           : p
       );
 
-      // Calcular el tiempo actual después de este tick
       const tiempoFinal = tiempoActual + 1;
-
       let processFinishedOrSuspended = false;
 
-      // PASO 6: Verificar si terminó
+      // PASO 6: Terminado
       if ((proc.tiempo_restante ?? 0) <= 0) {
         proc.estado = "terminado";
         proc.t_fin = proc.t_fin ?? tiempoFinal;
         proc.tiempo_cpu = 0;
         proc.resident = false;
-        // Al terminar, cuenta como completar su última "rotación"
         proc.iteracion = (proc.iteracion ?? 0) + 1;
         processFinishedOrSuspended = true;
       }
 
-      // PASO 7: Verificar si agotó el quantum (si no terminó)
+      // PASO 7: Quantum
       if (!processFinishedOrSuspended) {
-        // Quantum ahora es el número de rotaciones
-        // Slice Time = Tiempo Total / Quantum
         const total = proc.tiempo_total ?? 0;
         const rotations = proc.quantum || 1;
         const sliceTime = Math.ceil(total / rotations);
 
         if ((proc.tiempo_cpu ?? 0) >= sliceTime) {
-          // Ejecutando → Suspendido
           proc.estado = "suspendido";
           proc.tiempo_cpu = 0;
-          // RESETEAR interactividad al valor inicial
           proc.interactividad = proc.interactividad_inicial ?? 0;
-          
-          // Incrementar iteración (completó una rotación)
           proc.iteracion = (proc.iteracion ?? 0) + 1;
 
-          // Mover al final de la cola
           copia.splice(execIdx, 1);
           copia.push(proc);
           processFinishedOrSuspended = true;
         }
       }
 
-      // PASO 8: Si el proceso actual dejó de ejecutarse, seleccionar INMEDIATAMENTE el siguiente
+      // PASO 8: Siguiente
       if (processFinishedOrSuspended) {
-        // Buscar siguiente listo
         const nextExecIdx = copia.findIndex((p) => p.estado === "listo");
         if (nextExecIdx !== -1) {
            copia[nextExecIdx] = {
@@ -364,11 +338,10 @@ export default function SimuladorPage() {
     });
   };
 
-  // ---------- loop de simulación ----------
+  // ---------- loop ----------
   useEffect(() => {
     if (!running) return;
     
-    // Verificar si todos los procesos terminaron
     const allTerminated = procesos.length > 0 && procesos.every(
       (p) => p.estado === "terminado"
     );
@@ -396,16 +369,19 @@ export default function SimuladorPage() {
           const ready = prevList.filter((p) => p.estado === "listo");
           if (ready.length === 0) return prevList;
 
-          if (!initialPidSelectionDoneRef.current) {
-            const byPid = [...ready].sort(compareByPid);
-            const pidNext = byPid[0].pid;
-            initialPidSelectionDoneRef.current = true;
-            return prevList.map((p) =>
-              p.pid === pidNext ? { ...p, estado: "ejecutando", t_inicio: p.t_inicio ?? 0 } : p
-            );
+          // ORDENAR por PID ascendente al iniciar
+          const sorted = [...prevList].sort(compareByPid);
+          
+          // Encontrar el primero que esté listo en la lista ordenada
+          const firstReadyIdx = sorted.findIndex(p => p.estado === "listo");
+          
+          if (firstReadyIdx !== -1) {
+             return sorted.map((p, idx) => 
+               idx === firstReadyIdx ? { ...p, estado: "ejecutando", t_inicio: p.t_inicio ?? 0 } : p
+             );
           }
 
-          return prevList;
+          return sorted;
         });
       }
       return next;
@@ -431,7 +407,6 @@ export default function SimuladorPage() {
             variant="destructive"
             onClick={() => {
               setProcesos([]);
-              initialPidSelectionDoneRef.current = false;
               if (confirmToastIdRef.current !== null) toast.dismiss(confirmToastIdRef.current);
               confirmToastIdRef.current = null;
               toast.success("Todos los procesos han sido eliminados");
@@ -445,7 +420,6 @@ export default function SimuladorPage() {
             onClick={() => {
               if (confirmToastIdRef.current !== null) toast.dismiss(confirmToastIdRef.current);
               confirmToastIdRef.current = null;
-              toast.info("Operación cancelada");
             }}
           >
             Cancelar
@@ -554,7 +528,6 @@ export default function SimuladorPage() {
               onSave={(bcp) => {
                 actualizarProceso(editing.pid, bcp);
                 setEditing(null);
-                toast.success(`Proceso ${bcp.nombre} actualizado`, { toastId: `updated-${editing.pid}` });
               }}
               onCancel={() => setEditing(null)}
               existingPids={procesos.map((p) => p.pid)}

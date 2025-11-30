@@ -73,14 +73,14 @@ export default function ProcessForm({
   const generatePid = (existing: string[] = []) => {
     const existingSet = new Set(existing.map(String));
     const min = 10;
-    const max = 100;
-    for (let i = 0; i < 20; i++) {
+    const max = 999;
+    for (let i = 0; i < 50; i++) {
       const n = Math.floor(Math.random() * (max - min + 1)) + min;
       const pid = String(n)
       if (!existingSet.has(pid)) return pid
     }
     // fallback único
-    return String(Date.now()) + String(Math.floor(Math.random() * 900) + 100)
+    return String(Date.now()).slice(-4) + String(Math.floor(Math.random() * 90) + 10)
   }
 
   /**

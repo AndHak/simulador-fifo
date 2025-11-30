@@ -7,206 +7,171 @@ import {
 } from "@/shared/components/ui/tooltip";
 import { Process } from "./ProcessFrom";
 
+
 interface QuickLaunchBarProps {
   onLaunch: (config: Process) => void;
   existingNames: string[];
 }
 
-interface AppConfig {
-  name: string;
-  icon: string;
-  color?: string;
-  config: Partial<Process>;
-}
-
-const APPS: AppConfig[] = [
+/**
+ * Apps predefinidas
+ */
+const APPS = [
   {
     name: "VS Code",
     icon: "vscode-icons:file-type-vscode",
-    config: {
-      tiempo_total: 30,
-      quantum: 5,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 30, quantum: 5, interactividad: 3 },
   },
   {
     name: "Photoshop",
     icon: "logos:adobe-photoshop",
-    config: {
-      tiempo_total: 35,
-      quantum: 7,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 35, quantum: 7, interactividad: 3 },
   },
   {
     name: "Illustrator",
     icon: "logos:adobe-illustrator",
-    config: {
-      tiempo_total: 30,
-      quantum: 6,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 30, quantum: 6, interactividad: 3 },
   },
   {
     name: "Premiere Pro",
     icon: "logos:adobe-premiere",
-    config: {
-      tiempo_total: 40,
-      quantum: 8,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 40, quantum: 8, interactividad: 3 },
   },
   {
     name: "After Effects",
     icon: "logos:adobe-after-effects",
-    config: {
-      tiempo_total: 45,
-      quantum: 9,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 45, quantum: 9, interactividad: 3 },
   },
   {
     name: "Google Chrome",
     icon: "logos:chrome",
-    config: {
-      tiempo_total: 25,
-      quantum: 4,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 25, quantum: 4, interactividad: 3 },
   },
   {
     name: "Firefox",
     icon: "logos:firefox",
-    config: {
-      tiempo_total: 20,
-      quantum: 4,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 20, quantum: 4, interactividad: 3 },
   },
   {
     name: "Spotify",
     icon: "logos:spotify-icon",
-    config: {
-      tiempo_total: 20,
-      quantum: 3,
-      interactividad: 2,
-    },
+    config: { tiempo_total: 20, quantum: 3, interactividad: 2 },
   },
   {
     name: "Discord",
     icon: "logos:discord-icon",
-    config: {
-      tiempo_total: 25,
-      quantum: 4,
-      interactividad: 2,
-    },
+    config: { tiempo_total: 25, quantum: 4, interactividad: 2 },
   },
   {
     name: "Slack",
     icon: "logos:slack-icon",
-    config: {
-      tiempo_total: 15,
-      quantum: 3,
-      interactividad: 2,
-    },
+    config: { tiempo_total: 15, quantum: 3, interactividad: 2 },
   },
   {
     name: "IntelliJ IDEA",
     icon: "logos:intellij-idea",
-    config: {
-      tiempo_total: 35,
-      quantum: 6,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 35, quantum: 6, interactividad: 3 },
   },
   {
     name: "PyCharm",
     icon: "logos:pycharm",
-    config: {
-      tiempo_total: 30,
-      quantum: 5,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 30, quantum: 5, interactividad: 3 },
   },
   {
     name: "Figma",
     icon: "logos:figma",
-    config: {
-      tiempo_total: 25,
-      quantum: 5,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 25, quantum: 5, interactividad: 3 },
   },
   {
     name: "Notion",
     icon: "logos:notion-icon",
-    config: {
-      tiempo_total: 15,
-      quantum: 3,
-      interactividad: 1,
-    },
+    config: { tiempo_total: 15, quantum: 3, interactividad: 1 },
   },
   {
     name: "Word",
     icon: "vscode-icons:file-type-word",
-    config: {
-      tiempo_total: 30,
-      quantum: 5,
-      interactividad: 1,
-    },
+    config: { tiempo_total: 30, quantum: 5, interactividad: 1 },
   },
   {
     name: "Excel",
     icon: "vscode-icons:file-type-excel",
-    config: {
-      tiempo_total: 25,
-      quantum: 5,
-      interactividad: 2,
-    },
+    config: { tiempo_total: 25, quantum: 5, interactividad: 2 },
   },
   {
     name: "Power Point",
     icon: "vscode-icons:file-type-powerpoint",
-    config: {
-      tiempo_total: 35,
-      quantum: 7,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 35, quantum: 7, interactividad: 3 },
   },
   {
     name: "Terminal",
     icon: "flat-color-icons:command-line",
-    config: {
-      tiempo_total: 10,
-      quantum: 2,
-      interactividad: 3,
-    },
+    config: { tiempo_total: 10, quantum: 2, interactividad: 3 },
   },
 ];
 
-export default function QuickLaunchBar({ onLaunch, existingNames }: QuickLaunchBarProps) {
-  const handleLaunch = (app: AppConfig) => {
-    // Generar un PID temporal (el padre lo manejará o regenerará si es necesario)
-    // Pero aquí solo pasamos la config base.
+/**
+ * Registro de PIDs usados en esta sesión
+ */
+const usedPids = new Set<string>();
+
+/**
+ * Generador de PID único entre 100–999
+ */
+const generateUniquePid = (existing: string[] = []) => {
+  const existingSet = new Set(existing.map(String));
+
+  for (let i = 0; i < 500; i++) {
+    const n = Math.floor(Math.random() * 990) + 10; // 10–999
+    const pid = String(n);
+
+    if (!usedPids.has(pid) && !existingSet.has(pid)) {
+      usedPids.add(pid);
+      return pid;
+    }
+  }
+
+  // fallback secuencial
+  for (let n = 10; n <= 999; n++) {
+    const pid = String(n);
+    if (!usedPids.has(pid) && !existingSet.has(pid)) {
+      usedPids.add(pid);
+      return pid;
+    }
+  }
+
+  // fallback improbable
+  const fallback = String(Date.now()).slice(-6);
+  usedPids.add(fallback);
+  return fallback;
+};
+
+export default function QuickLaunchBar({
+  onLaunch,
+  existingNames,
+}: QuickLaunchBarProps) {
+
+  const handleLaunch = (app: any) => {
+    const pid = generateUniquePid();
+
     const processConfig: Process = {
-      pid: "", // Se generará en el padre
+      pid,
       nombre: app.name,
-      tiempo_total: app.config.tiempo_total!,
-      quantum: app.config.quantum!,
-      interactividad: app.config.interactividad!,
-      // Defaults
+      tiempo_total: app.config.tiempo_total,
+      tiempo_restante: app.config.tiempo_total,
+      quantum: app.config.quantum,
+      interactividad: app.config.interactividad,
       estado: "listo",
-      tiempo_restante: app.config.tiempo_total!,
+      progreso: 0,
       tiempo_cpu: 0,
       iteracion: 0,
-      progreso: 0,
       created_at: Date.now(),
       t_inicio: null,
       t_fin: null,
       tiempo_espera: 0,
       resident: true,
-      interactividad_inicial: app.config.interactividad!,
+      interactividad_inicial: app.config.interactividad,
     };
+
     onLaunch(processConfig);
   };
 
@@ -215,9 +180,11 @@ export default function QuickLaunchBar({ onLaunch, existingNames }: QuickLaunchB
       <div className="text-sm font-medium text-muted-foreground whitespace-nowrap mr-2">
         Quick Launch:
       </div>
+
       <div className="flex items-center gap-2">
         {APPS.map((app) => {
           const isRunning = existingNames.includes(app.name);
+
           return (
             <Tooltip key={app.name}>
               <TooltipTrigger asChild>
@@ -225,7 +192,7 @@ export default function QuickLaunchBar({ onLaunch, existingNames }: QuickLaunchB
                   variant="ghost"
                   size="icon"
                   className={`h-12 w-12 rounded-xl transition-all hover:bg-background hover:shadow-md ${
-                    isRunning ? "opacity-50 grayscale cursor-not-allowed" : "hover:scale-110"
+                    isRunning ? "opacity-50 grayscale cursor-not-allowed" : ""
                   }`}
                   onClick={() => !isRunning && handleLaunch(app)}
                   disabled={isRunning}
@@ -235,6 +202,7 @@ export default function QuickLaunchBar({ onLaunch, existingNames }: QuickLaunchB
                   </div>
                 </Button>
               </TooltipTrigger>
+
               <TooltipContent>
                 <p>{app.name}</p>
               </TooltipContent>
