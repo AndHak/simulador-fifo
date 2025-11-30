@@ -68,7 +68,7 @@ Este proyecto fue desarrollado por:
 * **Andrés Felipe Martinez Guerra**
 * **Sebastian David Ordoñez Bolaños**
 * **Juan Felipe Pantoja Andrade**
-* **Yoel Alejandro Torres**
+* **Yoel Alejandro Torres Arciniegas**
 
 ---
 
